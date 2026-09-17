@@ -37,11 +37,48 @@ uv pip install -e ".[dev]"
 
 ## 🧪 Pruebas Unitarias
 
-Ejecutar la suite completa de pruebas financieras:
+Ejecutar la suite completa de pruebas financieras y de API:
 
 ```bash
 pytest tests/ -v
 ```
+
+---
+
+## ⚡ Ejecución de la API REST (FastAPI)
+
+Para iniciar el servidor de desarrollo local con Swagger UI:
+
+```bash
+uvicorn src.app.api:app --reload --host 0.0.0.0 --port 8000
+```
+
+- **Documentación Interactiva (Swagger UI):** [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Documentación Alternativa (ReDoc):** [http://localhost:8000/redoc](http://localhost:8000/redoc)
+- **Healthcheck:** `GET /health`
+- **Simulación:** `POST /api/v1/simulate`
+- **Evaluación Refinanciamiento:** `POST /api/v1/evaluate-refinance`
+- **Extracción de Cartolas:** `POST /api/v1/extract-statement` y `POST /api/v1/extract-statement/upload`
+- **Tasas de Mercado:** `GET /api/v1/market-rates`
+
+---
+
+## 🖥️ Interfaz de Usuario Interactiva (Streamlit)
+
+Para lanzar el dashboard analítico interactivo con gráficos dinámicos de Plotly:
+
+```bash
+streamlit run src/app/dashboard.py
+```
+
+El panel abrirá automáticamente en tu navegador ([http://localhost:8501](http://localhost:8501)) y ofrece:
+- **Subida drag-and-drop de cartolas PDF** con auto-completado del crédito.
+- **Monitoreo macroeconómico:** UF en tiempo real, TPM y tasas CMF.
+- **Comparador de mercado:** Simulación contra los principales bancos chilenos y mutuarias.
+- **Gráficos dinámicos de Break-Even y Payback:** Curva de recuperación del costo de cambio.
+- **Simulador a medida:** Sliders de sensibilidad y mapa de calor 2D (Heatmap).
+- **Detector de la Falacia del Dividendo:** Advertencia cuantitativa contra el alargamiento destructivo de plazos.
+- **Tabla de desarrollo descargable en CSV.**
 
 ---
 

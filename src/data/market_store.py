@@ -12,10 +12,18 @@ class MarketDataStore:
 
     def __init__(self, db_path: str = DEFAULT_DB_PATH):
         self.db_path = db_path
+        self.is_memory_fallback = False
         if self.db_path != ":memory:":
             Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        self.conn = duckdb.connect(self.db_path)
-        self.init_schema()
+        try:
+            self.conn = duckdb.connect(self.db_path)
+            self.init_schema()
+        except duckdb.IOException:
+            # Fallback en memoria si la base de datos en disco tiene bloqueo por otro proceso (ej: uvicorn vs streamlit)
+            self.conn = duckdb.connect(":memory:")
+            self.is_memory_fallback = True
+            self.init_schema()
+            self.seed_default_market_data()
 
     def init_schema(self) -> None:
         """Inicializa las tablas maestras si no existen."""
@@ -237,7 +245,7 @@ class MarketDataStore:
                 "date": today_str,
                 "series_code": "F073.TPM.TCM.G01.Z.D",
                 "series_name": "Tasa de Política Monetaria (TPM)",
-                "value": 5.50,
+                "value": 4.50,
                 "unit": "PERCENT",
                 "source": "SEED_BENCHMARK",
             },

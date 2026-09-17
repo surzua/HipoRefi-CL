@@ -31,54 +31,117 @@ class MarketDataService:
             self.store.seed_default_market_data()
 
     DEFAULT_UF_FALLBACK = 40942.74
+    DEFAULT_TPM_FALLBACK = 4.50
 
-    def fetch_public_uf(self) -> Optional[float]:
+    def fetch_public_macro_data(self) -> Dict[str, Optional[float]]:
         """
-        Consulta el valor de la UF en tiempo real desde la API pública abierta de indicadores.
-        Guarda el valor en DuckDB si la consulta es exitosa.
+        Consulta indicadores macroeconómicos clave (UF y TPM) en tiempo real desde mindicador.cl.
+        Guarda los valores en DuckDB.
         """
+        results: Dict[str, Optional[float]] = {"uf": None, "tpm": None}
+        today_str = date.today().isoformat()
+        records = []
+
         try:
-            resp = requests.get("https://mindicador.cl/api/uf", timeout=6)
+            resp = requests.get("https://mindicador.cl/api", timeout=6)
             if resp.status_code == 200:
                 data = resp.json()
-                serie = data.get("serie", [])
-                if serie:
-                    latest = serie[0]
-                    raw_val = float(latest["valor"])
-                    raw_date = str(latest["fecha"]).split("T")[0]
-
-                    self.store.save_macro_series([
-                        {
-                            "date": raw_date,
-                            "series_code": CentralBankChileClient.SERIES_UF_DAILY,
-                            "series_name": "Unidad de Fomento (UF)",
-                            "value": raw_val,
-                            "unit": "CLP",
-                            "source": "MINDICADOR_PUBLIC_API",
-                        }
-                    ])
-                    return raw_val
+                if "uf" in data and "valor" in data["uf"]:
+                    val = float(data["uf"]["valor"])
+                    results["uf"] = val
+                    records.append({
+                        "date": today_str,
+                        "series_code": CentralBankChileClient.SERIES_UF_DAILY,
+                        "series_name": "Unidad de Fomento (UF)",
+                        "value": val,
+                        "unit": "CLP",
+                        "source": "MINDICADOR_PUBLIC_API",
+                    })
+                if "tpm" in data and "valor" in data["tpm"]:
+                    val = float(data["tpm"]["valor"])
+                    results["tpm"] = val
+                    records.append({
+                        "date": today_str,
+                        "series_code": CentralBankChileClient.SERIES_TPM,
+                        "series_name": "Tasa de Política Monetaria (TPM)",
+                        "value": val,
+                        "unit": "PERCENT",
+                        "source": "MINDICADOR_PUBLIC_API",
+                    })
         except Exception:
             pass
-        return None
+
+        # Fallback individual si el endpoint agregado no respondió
+        if results["uf"] is None:
+            try:
+                r_uf = requests.get("https://mindicador.cl/api/uf", timeout=5)
+                if r_uf.status_code == 200:
+                    serie = r_uf.json().get("serie", [])
+                    if serie:
+                        val = float(serie[0]["valor"])
+                        results["uf"] = val
+                        records.append({
+                            "date": today_str,
+                            "series_code": CentralBankChileClient.SERIES_UF_DAILY,
+                            "series_name": "Unidad de Fomento (UF)",
+                            "value": val,
+                            "unit": "CLP",
+                            "source": "MINDICADOR_PUBLIC_API",
+                        })
+            except Exception:
+                pass
+
+        if results["tpm"] is None:
+            try:
+                r_tpm = requests.get("https://mindicador.cl/api/tpm", timeout=5)
+                if r_tpm.status_code == 200:
+                    serie = r_tpm.json().get("serie", [])
+                    if serie:
+                        val = float(serie[0]["valor"])
+                        results["tpm"] = val
+                        records.append({
+                            "date": today_str,
+                            "series_code": CentralBankChileClient.SERIES_TPM,
+                            "series_name": "Tasa de Política Monetaria (TPM)",
+                            "value": val,
+                            "unit": "PERCENT",
+                            "source": "MINDICADOR_PUBLIC_API",
+                        })
+            except Exception:
+                pass
+
+        if records:
+            self.store.save_macro_series(records)
+
+        return results
+
+    def fetch_public_uf(self) -> Optional[float]:
+        """Consulta el valor de la UF en tiempo real desde la API pública abierta de indicadores."""
+        return self.fetch_public_macro_data().get("uf")
+
+    def get_current_tpm(self) -> float:
+        """Obtiene la Tasa de Política Monetaria (TPM) más reciente disponible."""
+        rates = self.store.get_latest_macro_rates()
+        if CentralBankChileClient.SERIES_TPM in rates:
+            return float(rates[CentralBankChileClient.SERIES_TPM]["value"])
+        live_tpm = self.fetch_public_macro_data().get("tpm")
+        return live_tpm if live_tpm is not None else self.DEFAULT_TPM_FALLBACK
 
     def sync_from_central_bank(self, days_back: int = 30) -> Dict[str, Any]:
         """
         Intenta sincronizar indicadores clave desde la API oficial del Banco Central.
-        Si las credenciales no están configuradas, actualiza la UF vía API pública.
+        Si las credenciales no están configuradas, actualiza UF y TPM vía API pública.
         """
         if not self.bcch_client.user or not self.bcch_client.password:
-            public_uf = self.fetch_public_uf()
-            if public_uf is not None:
-                return {
-                    "status": "SUCCESS",
-                    "source": "MINDICADOR_PUBLIC_API",
-                    "uf": public_uf,
-                    "message": f"UF actualizada en tiempo real: ${public_uf:,.2f} CLP (sin requerir credenciales BCCh).",
-                }
+            public_macro = self.fetch_public_macro_data()
+            public_uf = public_macro.get("uf") or self.get_current_uf()
+            public_tpm = public_macro.get("tpm") or self.get_current_tpm()
             return {
-                "status": "SKIPPED",
-                "message": "Credenciales del Banco Central no configuradas. Operando con catálogo local en DuckDB.",
+                "status": "SUCCESS",
+                "source": "MINDICADOR_PUBLIC_API",
+                "uf": public_uf,
+                "tpm": public_tpm,
+                "message": f"Indicadores actualizados en tiempo real: UF ${public_uf:,.2f} CLP, TPM {public_tpm:.2f}% (sin requerir credenciales BCCh).",
             }
 
         today = date.today()
@@ -98,6 +161,20 @@ class MarketDataService:
                     "series_name": "Unidad de Fomento (UF)",
                     "value": float(obs.get("value")),
                     "unit": "CLP",
+                    "source": "BCCH_API",
+                })
+
+            # 2. TPM
+            tpm_series = self.bcch_client.fetch_series(
+                CentralBankChileClient.SERIES_TPM, first_date, last_date
+            )
+            for obs in tpm_series.get("obs", []):
+                synced_records.append({
+                    "date": obs.get("indexDateString"),
+                    "series_code": CentralBankChileClient.SERIES_TPM,
+                    "series_name": "Tasa de Política Monetaria (TPM)",
+                    "value": float(obs.get("value")),
+                    "unit": "PERCENT",
                     "source": "BCCH_API",
                 })
 
@@ -135,9 +212,11 @@ class MarketDataService:
         """Retorna un panorama macroeconómico y tasas hipotecarias promedio."""
         latest_rates = self.store.get_latest_macro_rates()
         cmf_benchmarks = self.cmf_client.get_market_benchmarks()
+        tpm_val = self.get_current_tpm()
 
         return {
             "uf_current": self.get_current_uf(),
+            "tpm_current": tpm_val,
             "latest_macro_rates": latest_rates,
             "cmf_benchmarks": {
                 k: {

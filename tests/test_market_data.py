@@ -38,6 +38,8 @@ def test_duckdb_seed_and_query(memory_store):
     summary = memory_store.get_latest_macro_rates()
     assert "F073.UFF.PRE.Z.D" in summary
     assert "F072.CLP.COL.VIV.Z.M" in summary
+    assert "F073.TPM.TCM.G01.Z.D" in summary
+    assert summary["F073.TPM.TCM.G01.Z.D"]["value"] == 4.50
 
     # 3. Ofertas de bancos
     offers_20 = memory_store.get_active_bank_offers(term_years=20)
