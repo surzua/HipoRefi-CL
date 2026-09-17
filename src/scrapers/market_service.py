@@ -1,6 +1,7 @@
 """Servicio orquestador de datos de mercado, sincronización macro y cotizaciones bancarias."""
 
 import os
+import requests
 from typing import Dict, Any, List, Optional
 from datetime import date
 
@@ -29,19 +30,58 @@ class MarketDataService:
         if self.store.get_latest_uf() is None:
             self.store.seed_default_market_data()
 
+    DEFAULT_UF_FALLBACK = 40942.74
+
+    def fetch_public_uf(self) -> Optional[float]:
+        """
+        Consulta el valor de la UF en tiempo real desde la API pública abierta de indicadores.
+        Guarda el valor en DuckDB si la consulta es exitosa.
+        """
+        try:
+            resp = requests.get("https://mindicador.cl/api/uf", timeout=6)
+            if resp.status_code == 200:
+                data = resp.json()
+                serie = data.get("serie", [])
+                if serie:
+                    latest = serie[0]
+                    raw_val = float(latest["valor"])
+                    raw_date = str(latest["fecha"]).split("T")[0]
+
+                    self.store.save_macro_series([
+                        {
+                            "date": raw_date,
+                            "series_code": CentralBankChileClient.SERIES_UF_DAILY,
+                            "series_name": "Unidad de Fomento (UF)",
+                            "value": raw_val,
+                            "unit": "CLP",
+                            "source": "MINDICADOR_PUBLIC_API",
+                        }
+                    ])
+                    return raw_val
+        except Exception:
+            pass
+        return None
+
     def sync_from_central_bank(self, days_back: int = 30) -> Dict[str, Any]:
         """
         Intenta sincronizar indicadores clave desde la API oficial del Banco Central.
-        Si las credenciales no están configuradas, opera con datos almacenados.
+        Si las credenciales no están configuradas, actualiza la UF vía API pública.
         """
         if not self.bcch_client.user or not self.bcch_client.password:
+            public_uf = self.fetch_public_uf()
+            if public_uf is not None:
+                return {
+                    "status": "SUCCESS",
+                    "source": "MINDICADOR_PUBLIC_API",
+                    "uf": public_uf,
+                    "message": f"UF actualizada en tiempo real: ${public_uf:,.2f} CLP (sin requerir credenciales BCCh).",
+                }
             return {
                 "status": "SKIPPED",
                 "message": "Credenciales del Banco Central no configuradas. Operando con catálogo local en DuckDB.",
             }
 
         today = date.today()
-        # Formatear rango
         first_date = today.replace(day=1).isoformat()
         last_date = today.isoformat()
 
@@ -69,10 +109,19 @@ class MarketDataService:
         except Exception as e:
             return {"status": "ERROR", "message": str(e)}
 
-    def get_current_uf(self) -> float:
-        """Obtiene el valor de la UF más reciente disponible."""
+    def get_current_uf(self, force_refresh: bool = False) -> float:
+        """
+        Obtiene el valor de la UF más reciente disponible.
+        Si el valor almacenado es obsoleto o menor a 39.000, consulta la API en vivo.
+        """
         uf = self.store.get_latest_uf()
-        return uf if uf is not None else 37950.0
+        if uf is None or uf < 39000.0 or force_refresh:
+            live_uf = self.fetch_public_uf()
+            if live_uf is not None:
+                return live_uf
+            if uf is None or uf < 39000.0:
+                uf = self.DEFAULT_UF_FALLBACK
+        return uf
 
     def convert_uf_to_clp(self, amount_uf: float) -> float:
         """Convierte un monto en UF a pesos chilenos al valor vigente."""

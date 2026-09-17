@@ -221,7 +221,7 @@ class MarketDataStore:
                 "date": today_str,
                 "series_code": "F073.UFF.PRE.Z.D",
                 "series_name": "Unidad de Fomento (UF)",
-                "value": 37950.25,
+                "value": 40942.74,
                 "unit": "CLP",
                 "source": "SEED_BENCHMARK",
             },

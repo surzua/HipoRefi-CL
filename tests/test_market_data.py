@@ -84,13 +84,13 @@ def test_market_service_offline_mode(memory_store):
     """Valida que el servicio funcione de forma autónoma sin credenciales del Banco Central."""
     service = MarketDataService(store=memory_store)
 
-    # Intentar sincronizar sin credenciales debe saltarse sin arrojar excepción
+    # Intentar sincronizar sin credenciales del BCCh debe resolver vía API pública o saltar limpiamente sin errores
     sync_res = service.sync_from_central_bank()
-    assert sync_res["status"] == "SKIPPED"
+    assert sync_res["status"] in ["SUCCESS", "SKIPPED"]
 
-    # Conversión de monedas
+    # Conversión de monedas con la UF vigente
     uf = service.get_current_uf()
-    assert uf > 0
+    assert uf >= 40000.0  # UF actualizada de la economía chilena
     clp_val = service.convert_uf_to_clp(10.0)
     assert pytest.approx(clp_val, rel=1e-4) == 10.0 * uf
     assert pytest.approx(service.convert_clp_to_uf(clp_val), rel=1e-4) == 10.0
