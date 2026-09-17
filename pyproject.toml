@@ -28,6 +28,8 @@ dev = [
     "httpx>=0.27.0",
     "ruff>=0.5.0",
     "ipykernel>=6.29.0",
+    "nbformat>=5.9.0",
+    "nbclient>=0.10.0",
 ]
 scrapers = [
     "playwright>=1.44.0",
