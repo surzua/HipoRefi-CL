@@ -1,0 +1,48 @@
+[project]
+name = "hipo-refi-cl"
+version = "0.1.0"
+description = "Motor Cuantitativo y Plataforma de Optimización de Refinanciamiento Hipotecario en Chile"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "Sebastian Urzua" }
+]
+dependencies = [
+    "numpy>=1.26.0",
+    "pandas>=2.2.0",
+    "duckdb>=1.0.0",
+    "pydantic>=2.7.0",
+    "requests>=2.31.0",
+    "python-dotenv>=1.0.1",
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+    "streamlit>=1.36.0",
+    "plotly>=5.22.0",
+    "pypdf>=4.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-cov>=5.0.0",
+    "httpx>=0.27.0",
+    "ruff>=0.5.0",
+]
+scrapers = [
+    "playwright>=1.44.0",
+    "beautifulsoup4>=4.12.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+python_files = "test_*.py"
+python_functions = "test_*"
+

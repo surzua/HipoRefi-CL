@@ -1,0 +1,46 @@
+# Python virtual environments
+.venv/
+env/
+venv/
+ENV/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Environment variables & secrets
+.env
+*.local
+
+# Database & Cache files
+*.duckdb
+*.duckdb.wal
+*.sqlite3
+*.db
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE settings (keep settings.json for venv auto-activation, ignore user-specific state)
+.vscode/*
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Data folders (raw downloads and cache)
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
