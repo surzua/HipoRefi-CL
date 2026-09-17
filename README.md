@@ -43,42 +43,66 @@ Ejecutar la suite completa de pruebas financieras y de API:
 pytest tests/ -v
 ```
 
----
+## 🚀 Inicio Rápido
 
-## ⚡ Ejecución de la API REST (FastAPI)
-
-Para iniciar el servidor de desarrollo local con Swagger UI:
+### 1. Activar el Entorno Virtual
+Antes de ejecutar cualquier comando, activa el entorno virtual de Python:
 
 ```bash
+source .venv/bin/activate
+```
+
+---
+
+## 🖥️ Cómo Activar el Dashboard Interactivo (Streamlit)
+
+El dashboard web es la forma más intuitiva de evaluar créditos hipotecarios, explorar ofertas bancarias y visualizar gráficos interactivos:
+
+```bash
+# Opción 1: Con entorno virtual activado
+streamlit run src/app/dashboard.py
+
+# Opción 2: Directo con el ejecutable del entorno
+.venv/bin/streamlit run src/app/dashboard.py
+```
+
+Una vez ejecutado, se abrirá automáticamente en tu navegador en:
+👉 **[http://localhost:8501](http://localhost:8501)**
+
+### Funcionalidades Disponibles en la Interfaz:
+- **Arrastrar y soltar (Drag & Drop) de cartolas PDF:** Sube tu estado de cuenta bancario y el sistema auto-completará saldo, tasa, cuotas restantes y seguros.
+- **Monitoreo Macroeconómico en Vivo:** Indicadores actualizados de la UF en CLP, TPM (4.50%) y tasas CMF.
+- **5 Pestañas de Análisis Especializado:**
+  1. 🏆 **Comparador de Mercado:** Ranking de entidades según mayor ganancia neta (VPN) y desglose legal de gastos de cambio (Ley N° 21.236).
+  2. 📈 **Punto de Equilibrio & Payback:** Curva de recuperación del costo de cambio y mes exacto de Break-Even.
+  3. 🎛️ **Simulador a Medida:** Sliders para evaluar contraofertas particulares y **Heatmap 2D** de Tasa vs Plazo.
+  4. ⚠️ **Detector de la 'Falacia del Dividendo':** Demostración del sobrecosto en intereses al alargar plazos para bajar cuota.
+  5. 📋 **Tabla de Amortización Francesa:** Detalle cuota a cuota con botón de **descarga en CSV**.
+
+---
+
+## ⚡ Cómo Activar la API REST Backend (FastAPI)
+
+Para consumir el motor cuantitativo desde otras aplicaciones, scripts o servicios web:
+
+```bash
+# Opción 1: Con entorno virtual activado
 uvicorn src.app.api:app --reload --host 0.0.0.0 --port 8000
+
+# Opción 2: Directo con el ejecutable del entorno
+.venv/bin/uvicorn src.app.api:app --reload --port 8000
 ```
 
 - **Documentación Interactiva (Swagger UI):** [http://localhost:8000/docs](http://localhost:8000/docs)
 - **Documentación Alternativa (ReDoc):** [http://localhost:8000/redoc](http://localhost:8000/redoc)
-- **Healthcheck:** `GET /health`
-- **Simulación:** `POST /api/v1/simulate`
-- **Evaluación Refinanciamiento:** `POST /api/v1/evaluate-refinance`
-- **Extracción de Cartolas:** `POST /api/v1/extract-statement` y `POST /api/v1/extract-statement/upload`
-- **Tasas de Mercado:** `GET /api/v1/market-rates`
+- **Healthcheck:** `GET http://localhost:8000/health`
+- **Simulación:** `POST http://localhost:8000/api/v1/simulate`
+- **Evaluación Refinanciamiento:** `POST http://localhost:8000/api/v1/evaluate-refinance`
+- **Extracción de Cartolas:** `POST http://localhost:8000/api/v1/extract-statement` y `POST http://localhost:8000/api/v1/extract-statement/upload`
+- **Tasas e Indicadores de Mercado:** `GET http://localhost:8000/api/v1/market-rates`
 
----
-
-## 🖥️ Interfaz de Usuario Interactiva (Streamlit)
-
-Para lanzar el dashboard analítico interactivo con gráficos dinámicos de Plotly:
-
-```bash
-streamlit run src/app/dashboard.py
-```
-
-El panel abrirá automáticamente en tu navegador ([http://localhost:8501](http://localhost:8501)) y ofrece:
-- **Subida drag-and-drop de cartolas PDF** con auto-completado del crédito.
-- **Monitoreo macroeconómico:** UF en tiempo real, TPM y tasas CMF.
-- **Comparador de mercado:** Simulación contra los principales bancos chilenos y mutuarias.
-- **Gráficos dinámicos de Break-Even y Payback:** Curva de recuperación del costo de cambio.
-- **Simulador a medida:** Sliders de sensibilidad y mapa de calor 2D (Heatmap).
-- **Detector de la Falacia del Dividendo:** Advertencia cuantitativa contra el alargamiento destructivo de plazos.
-- **Tabla de desarrollo descargable en CSV.**
+> [!TIP]
+> Puedes tener **el Dashboard y la API corriendo simultáneamente** en terminales separadas; la base de datos DuckDB cuenta con protección automática de concurrencia y no genera conflictos de bloqueo.
 
 ---
 
