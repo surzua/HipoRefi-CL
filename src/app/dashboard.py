@@ -20,6 +20,7 @@ from src.core.switching_costs import SwitchingCostCalculator
 from src.core.metrics import RefinanceAnalyzer
 from src.scrapers.market_service import MarketDataService
 from src.parsers.statement_extractor import StatementExtractor
+from src.reports.pdf_generator import ExecutiveReportGenerator
 from src.app.charts import (
     create_market_npv_chart,
     create_payback_trajectory_chart,
@@ -179,6 +180,8 @@ with st.sidebar:
             if extracted.fire_insurance_uf:
                 st.session_state["fire_insurance_uf"] = extracted.fire_insurance_uf
             st.session_state["detected_bank"] = extracted.bank_name
+            if extracted.operation_number:
+                st.session_state["operation_number"] = extracted.operation_number
 
             st.success(f"✓ Extraído con éxito: {extracted.bank_name}")
             st.caption(f"Operación: {extracted.operation_number or 'N/A'}")
@@ -363,6 +366,60 @@ with tab_market:
             delta_color="inverse",
         )
 
+        # Generación del Dictamen Ejecutivo en PDF para la mejor alternativa
+        market_opps_report = []
+        for o in opportunities:
+            bq_item = o["bank_quote"]
+            ev_item = o["evaluation"]
+            market_opps_report.append({
+                "bank_name": bq_item["bank_name"],
+                "annual_rate_pct": bq_item["annual_rate_pct"],
+                "monthly_dividend_uf": bq_item["monthly_total_dividend_uf"],
+                "monthly_savings_clp": ev_item["monthly_savings_uf"] * uf_current,
+                "npv_uf": ev_item["npv_uf"],
+                "payback_months": ev_item["payback_months"],
+                "recommendation_flag": ev_item["recommendation_flag"],
+            })
+
+        pdf_payload_best = {
+            "client_name": st.session_state.get("client_name", "Titular del Crédito"),
+            "operation_number": st.session_state.get("operation_number"),
+            "current_bank": st.session_state.get("detected_bank", "Banco Acreedor Actual"),
+            "uf_value": uf_current,
+            "current_balance_uf": balance_uf,
+            "current_rate_pct": annual_rate_pct,
+            "months_remaining": months_remaining,
+            "current_total_dividend_uf": current_dividend_uf,
+            "current_dividend_clp": current_dividend_uf * uf_current,
+            "target_bank": best_quote["bank_name"],
+            "new_rate_pct": best_quote["annual_rate_pct"],
+            "new_months": best_quote["term_years"] * 12,
+            "new_dividend_uf": best_quote["monthly_total_dividend_uf"],
+            "new_dividend_clp": best_quote["monthly_total_dividend_uf"] * uf_current,
+            "recommendation_flag": best_decision["recommendation_flag"],
+            "rationale": best_decision["rationale"],
+            "npv_uf": best_decision["npv_uf"],
+            "npv_clp": best_decision["npv_uf"] * uf_current,
+            "monthly_savings_uf": best_decision["monthly_savings_uf"],
+            "monthly_savings_clp": best_decision["monthly_savings_uf"] * uf_current,
+            "payback_months": best_decision["payback_months"],
+            "discount_rate_pct": discount_rate_pct,
+            "switching_costs": costs.to_dict(),
+            "market_opportunities": market_opps_report,
+        }
+
+        try:
+            pdf_bytes_best = ExecutiveReportGenerator.generate_pdf(pdf_payload_best)
+            st.download_button(
+                label="📥 Descargar Dictamen Ejecutivo en PDF (Ley N° 21.236)",
+                data=pdf_bytes_best,
+                file_name=f"dictamen_portabilidad_{best_quote['bank_name'].lower().replace(' ', '_')}.pdf",
+                mime="application/pdf",
+                help="Genera un dictamen formal en PDF listo para imprimir o presentar ante el banco.",
+            )
+        except Exception as e:
+            st.warning(f"No fue posible generar el informe PDF: {e}")
+
     st.write("")
 
     # Desglose de Costos de Cambio
@@ -531,6 +588,54 @@ with tab_sim:
     )
 
     st.info(f"**Análisis:** {c_decision.rationale}")
+
+    # Generación de PDF para la simulación a medida
+    pdf_payload_custom = {
+        "client_name": st.session_state.get("client_name", "Titular del Crédito"),
+        "operation_number": st.session_state.get("operation_number"),
+        "current_bank": st.session_state.get("detected_bank", "Banco Acreedor Actual"),
+        "uf_value": uf_current,
+        "current_balance_uf": balance_uf,
+        "current_rate_pct": annual_rate_pct,
+        "months_remaining": months_remaining,
+        "current_total_dividend_uf": current_dividend_uf,
+        "current_dividend_clp": current_dividend_uf * uf_current,
+        "target_bank": custom_bank,
+        "new_rate_pct": custom_rate,
+        "new_months": c_months,
+        "new_dividend_uf": c_sched[0]["total_dividend_uf"] if c_sched else 0.0,
+        "new_dividend_clp": (c_sched[0]["total_dividend_uf"] if c_sched else 0.0) * uf_current,
+        "recommendation_flag": c_decision.recommendation_flag,
+        "rationale": c_decision.rationale,
+        "npv_uf": c_decision.npv_uf,
+        "npv_clp": c_decision.npv_uf * uf_current,
+        "monthly_savings_uf": c_decision.monthly_savings_uf,
+        "monthly_savings_clp": c_decision.monthly_savings_uf * uf_current,
+        "payback_months": c_decision.payback_months,
+        "discount_rate_pct": discount_rate_pct,
+        "switching_costs": costs.to_dict(),
+        "market_opportunities": [
+            {
+                "bank_name": custom_bank,
+                "annual_rate_pct": custom_rate,
+                "monthly_dividend_uf": c_sched[0]["total_dividend_uf"] if c_sched else 0.0,
+                "monthly_savings_clp": c_decision.monthly_savings_uf * uf_current,
+                "npv_uf": c_decision.npv_uf,
+                "payback_months": c_decision.payback_months,
+                "recommendation_flag": c_decision.recommendation_flag,
+            }
+        ],
+    }
+    try:
+        pdf_bytes_custom = ExecutiveReportGenerator.generate_pdf(pdf_payload_custom)
+        st.download_button(
+            label=f"📥 Descargar Dictamen en PDF de esta Contraoferta ({custom_bank})",
+            data=pdf_bytes_custom,
+            file_name=f"dictamen_contraoferta_{custom_bank.lower().replace(' ', '_')}.pdf",
+            mime="application/pdf",
+        )
+    except Exception as e:
+        st.warning(f"No fue posible generar el informe PDF personalizado: {e}")
 
     st.divider()
 

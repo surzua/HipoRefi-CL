@@ -356,3 +356,26 @@ class HealthResponse(BaseModel):
     version: str = Field(examples=["0.1.0"])
     database: str = Field(examples=["duckdb_connected"])
     uf_current: Optional[float] = Field(default=None, description="Valor actual de la UF cargado en memoria")
+
+
+# ============================================================================
+# Modelo para Generación de Informe en PDF
+# ============================================================================
+
+class ReportPDFRequest(RefinanceEvaluationRequest):
+    """Solicitud de generación de dictamen ejecutivo en PDF formal (Ley 21.236)."""
+    client_name: Optional[str] = Field(
+        default="Titular Hipotecario",
+        description="Nombre del cliente o titular para la carátula del informe",
+        examples=["Sebastián Urzúa"],
+    )
+    operation_number: Optional[str] = Field(
+        default=None,
+        description="Número de operación o crédito si está disponible",
+        examples=["45892019-3"],
+    )
+    current_bank_name: Optional[str] = Field(
+        default="Banco Acreedor Actual",
+        description="Nombre del banco o mutuaria acreedora actual",
+        examples=["Banco de Chile"],
+    )

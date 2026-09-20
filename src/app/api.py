@@ -7,7 +7,7 @@ de cartolas y consulta de datos de mercado en tiempo real.
 
 from typing import Optional, Dict, Any, List
 import io
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, status
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, status, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.app.schemas import (
@@ -23,12 +23,14 @@ from src.app.schemas import (
     StatementExtractionResponse,
     MarketRatesResponse,
     HealthResponse,
+    ReportPDFRequest,
 )
 from src.core.amortizer import FrenchAmortizer, MortgageParams
 from src.core.switching_costs import SwitchingCostCalculator
 from src.core.metrics import RefinanceAnalyzer
 from src.scrapers.market_service import MarketDataService
 from src.parsers.statement_extractor import StatementExtractor
+from src.reports.pdf_generator import ExecutiveReportGenerator
 
 
 # ============================================================================
@@ -588,6 +590,124 @@ def sync_market_rates(market_service: MarketDataService = Depends(get_market_ser
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Fallo en la sincronización: {str(e)}",
+        )
+
+
+@app.post(
+    "/api/v1/reports/pdf",
+    summary="Generar Dictamen Ejecutivo y Reporte Técnico en PDF (Ley 21.236)",
+    tags=["Reportabilidad"],
+    response_class=Response,
+    responses={
+        200: {
+            "content": {"application/pdf": {}},
+            "description": "Documento PDF binario con el dictamen de portabilidad hipotecaria.",
+        }
+    },
+)
+def generate_evaluation_pdf_report(
+    request: ReportPDFRequest,
+    market_service: MarketDataService = Depends(get_market_service),
+):
+    """
+    Genera un dictamen formal descargable en PDF de 2 páginas que incluye:
+    1. Ficha del deudor y crédito hipotecario vigente.
+    2. Semáforo y recomendación patrimonial (VPN en UF y CLP, Ahorro mensual, Payback).
+    3. Desglose normativo de costos de cambio (Ley N° 21.236, DL 3475, LGB Art. 100).
+    4. Gráfico vectorial de la curva de Break-Even / Payback dinámico.
+    5. Benchmark de alternativas de mercado y cláusulas metodológicas.
+    """
+    try:
+        # Ejecutar evaluación cuantitativa
+        eval_resp = evaluate_refinance(request, market_service)
+        uf_val = market_service.get_current_uf()
+        curr = request.current_loan
+        curr_summary = eval_resp.current_loan_summary
+
+        # Determinar propuesta evaluada (personalizada o mejor del mercado)
+        if request.new_loan is not None and eval_resp.single_evaluation is not None:
+            decision = eval_resp.single_evaluation
+            target_bank = request.new_loan.institution_name or "Propuesta Evaluada"
+            new_rate = request.new_loan.annual_rate_pct
+            new_months = request.new_loan.months or (
+                request.new_loan.term_years * 12 if request.new_loan.term_years else curr.months_remaining
+            )
+            new_div_uf = curr_summary.get("current_dividend_uf", 0.0) - decision.monthly_savings_uf
+        elif eval_resp.best_opportunity is not None:
+            best_opp = eval_resp.best_opportunity
+            decision = best_opp.evaluation
+            target_bank = best_opp.institution_name
+            new_rate = best_opp.annual_rate_pct
+            new_months = best_opp.term_years * 12
+            new_div_uf = best_opp.monthly_dividend_new_uf
+        else:
+            decision = RefinanceDecisionDetail(
+                npv_uf=0.0,
+                npv_clp=0.0,
+                payback_months=None,
+                monthly_savings_uf=0.0,
+                monthly_savings_clp=0.0,
+                total_lifetime_savings_nominal_uf=0.0,
+                total_lifetime_savings_nominal_clp=0.0,
+                recommendation_flag="NO_CONVIENE",
+                rationale="No se identificaron alternativas convenientes en el mercado.",
+            )
+            target_bank = "Mercado General"
+            new_rate = curr.annual_rate_pct
+            new_months = curr.months_remaining
+            new_div_uf = curr_summary.get("current_dividend_uf", 0.0)
+
+        market_opps_list = []
+        for opp in eval_resp.all_opportunities:
+            market_opps_list.append({
+                "bank_name": opp.institution_name,
+                "annual_rate_pct": opp.annual_rate_pct,
+                "monthly_dividend_uf": opp.monthly_dividend_new_uf,
+                "monthly_savings_clp": opp.evaluation.monthly_savings_clp,
+                "npv_uf": opp.evaluation.npv_uf,
+                "payback_months": opp.evaluation.payback_months,
+                "recommendation_flag": opp.evaluation.recommendation_flag,
+            })
+
+        pdf_data = {
+            "client_name": request.client_name or "Titular Hipotecario",
+            "operation_number": request.operation_number,
+            "current_bank": request.current_bank_name or "Banco Acreedor Actual",
+            "uf_value": uf_val,
+            "current_balance_uf": curr.balance_uf,
+            "current_rate_pct": curr.annual_rate_pct,
+            "months_remaining": curr.months_remaining,
+            "current_total_dividend_uf": curr_summary.get("current_dividend_uf", 0.0),
+            "current_dividend_clp": curr_summary.get("current_dividend_clp", 0.0),
+            "target_bank": target_bank,
+            "new_rate_pct": new_rate,
+            "new_months": new_months,
+            "new_dividend_uf": new_div_uf,
+            "new_dividend_clp": new_div_uf * uf_val,
+            "recommendation_flag": decision.recommendation_flag,
+            "rationale": decision.rationale,
+            "npv_uf": decision.npv_uf,
+            "npv_clp": decision.npv_clp,
+            "monthly_savings_uf": decision.monthly_savings_uf,
+            "monthly_savings_clp": decision.monthly_savings_clp,
+            "payback_months": decision.payback_months,
+            "discount_rate_pct": request.annual_discount_rate_pct,
+            "switching_costs": eval_resp.switching_costs.model_dump(),
+            "market_opportunities": market_opps_list,
+        }
+
+        pdf_bytes = ExecutiveReportGenerator.generate_pdf(pdf_data)
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": "attachment; filename=dictamen_hiporefi_cl.pdf"},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al generar dictamen en PDF: {str(e)}",
         )
 
 

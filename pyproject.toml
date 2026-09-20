@@ -19,6 +19,7 @@ dependencies = [
     "streamlit>=1.36.0",
     "plotly>=5.22.0",
     "pypdf>=4.2.0",
+    "reportlab>=4.1.0",
 ]
 
 [project.optional-dependencies]
