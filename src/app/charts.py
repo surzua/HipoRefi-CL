@@ -282,3 +282,232 @@ def create_dividend_fallacy_chart(
         margin=dict(l=40, r=40, t=60, b=40),
     )
     return fig
+
+
+# ============================================================================
+# Visualizaciones de Hito 8: Módulo Financiero y Normativo Avanzado
+# ============================================================================
+
+def create_prepayment_comparison_chart(
+    base_schedule: List[Dict[str, Any]],
+    term_schedule: List[Dict[str, Any]],
+    div_schedule: List[Dict[str, Any]],
+) -> go.Figure:
+    """Genera la comparativa de trayectorias de dividendo entre crédito base y las dos opciones de prepago."""
+    max_months = len(base_schedule)
+    months_axis = list(range(1, max_months + 1))
+
+    flows_base = [r["total_dividend_uf"] for r in base_schedule]
+    flows_div = [r["total_dividend_uf"] for r in div_schedule]
+
+    # Para reducción de plazo, tras terminar el crédito el dividendo es 0
+    flows_term = [r["total_dividend_uf"] for r in term_schedule]
+    if len(flows_term) < max_months:
+        flows_term.extend([0.0] * (max_months - len(flows_term)))
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=months_axis,
+        y=flows_base,
+        mode="lines",
+        name="Crédito Original (Sin Prepago)",
+        line=dict(color="#7F8C8D", width=2, dash="dash"),
+        hovertemplate="Mes %{x}: <b>%{y:.2f} UF</b><extra></extra>",
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=months_axis,
+        y=flows_term,
+        mode="lines",
+        name="Opción A: Reducir Plazo",
+        line=dict(color="#2980B9", width=3),
+        hovertemplate="Mes %{x}: <b>%{y:.2f} UF</b><extra></extra>",
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=months_axis,
+        y=flows_div,
+        mode="lines",
+        name="Opción B: Reducir Dividendo",
+        line=dict(color="#27AE60", width=3),
+        hovertemplate="Mes %{x}: <b>%{y:.2f} UF</b><extra></extra>",
+    ))
+
+    if len(term_schedule) < max_months:
+        fig.add_vline(
+            x=len(term_schedule),
+            line_dash="dot",
+            line_color="#2980B9",
+            annotation_text=f"Fin Opción Plazo (Mes {len(term_schedule)})",
+            annotation_position="top right",
+        )
+
+    fig.update_layout(
+        title="<b>Comparativa de Flujos de Dividendos: Abono Extraordinario</b>",
+        xaxis_title="Mes del Crédito",
+        yaxis_title="Dividendo Mensual Total (UF)",
+        template="plotly_white",
+        height=450,
+        legend=dict(x=0.02, y=0.98),
+        margin=dict(l=40, r=40, t=60, b=40),
+    )
+    return fig
+
+
+def create_mixed_rate_stress_chart(
+    pure_fixed_dividend: float,
+    scenarios: List[Any],
+    fixed_period_months: int,
+    total_months: int,
+) -> go.Figure:
+    """Genera el gráfico de trayectorias de dividendo bajo los escenarios de estrés de tasa mixta."""
+    months_axis = list(range(1, total_months + 1))
+    colors = {
+        -150: "#27AE60",  # Bajista
+        0: "#2980B9",     # Base
+        150: "#E67E22",   # Alcista
+        300: "#C0392B",   # Severo
+    }
+
+    fig = go.Figure()
+
+    # Línea de crédito 100% fijo puro
+    fig.add_trace(go.Scatter(
+        x=months_axis,
+        y=[pure_fixed_dividend] * total_months,
+        mode="lines",
+        name=f"100% Fijo ({pure_fixed_dividend:.2f} UF)",
+        line=dict(color="#2C3E50", width=2.5, dash="dash"),
+        hovertemplate="Mes %{x}: <b>%{y:.2f} UF</b> (Fijo Puro)<extra></extra>",
+    ))
+
+    # Trazar cada escenario
+    for sc in scenarios:
+        bps = getattr(sc, "rate_change_bps", 0)
+        name = getattr(sc, "scenario_name", "Escenario")
+        initial_div = getattr(sc, "initial_dividend_uf", 0.0)
+        sub_div = getattr(sc, "subsequent_dividend_uf", 0.0)
+
+        # Flujo de este escenario
+        flows = [initial_div] * fixed_period_months + [sub_div] * (total_months - fixed_period_months)
+
+        fig.add_trace(go.Scatter(
+            x=months_axis,
+            y=flows,
+            mode="lines",
+            name=f"{name} ({sub_div:.2f} UF)",
+            line=dict(color=colors.get(bps, "#8E44AD"), width=2),
+            hovertemplate="Mes %{x}: <b>%{y:.2f} UF</b><extra></extra>",
+        ))
+
+    # Hito del mes de cambio de tasa
+    fig.add_vline(
+        x=fixed_period_months,
+        line_dash="dot",
+        line_color="#7F8C8D",
+        annotation_text=f"Reinicio de Tasa (Mes {fixed_period_months})",
+        annotation_position="bottom right",
+    )
+
+    fig.update_layout(
+        title="<b>Matriz de Estrés de Dividendos: Tasa Mixta vs. Fija</b>",
+        xaxis_title="Mes del Crédito",
+        yaxis_title="Dividendo Mensual Total (UF)",
+        template="plotly_white",
+        height=450,
+        legend=dict(x=0.02, y=0.98),
+        margin=dict(l=40, r=40, t=60, b=40),
+    )
+    return fig
+
+
+def create_french_vs_german_chart(
+    french_schedule: List[Dict[str, Any]],
+    german_schedule: List[Dict[str, Any]],
+) -> go.Figure:
+    """Genera la comparativa cuota a cuota entre sistema francés y sistema alemán."""
+    months_axis = [r["month"] for r in french_schedule]
+    french_divs = [r["total_dividend_uf"] for r in french_schedule]
+    german_divs = [r["total_dividend_uf"] for r in german_schedule]
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=months_axis,
+        y=french_divs,
+        mode="lines",
+        name="Sistema Francés (Dividendo Constante)",
+        line=dict(color="#2980B9", width=3),
+        hovertemplate="Mes %{x}: <b>%{y:.2f} UF</b> (Francés)<extra></extra>",
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=months_axis,
+        y=german_divs,
+        mode="lines",
+        name="Sistema Alemán (Cuota Decreciente)",
+        line=dict(color="#8E44AD", width=3),
+        hovertemplate="Mes %{x}: <b>%{y:.2f} UF</b> (Alemán)<extra></extra>",
+    ))
+
+    # Punto de cruce aproximado
+    cross_month = None
+    for i, (f, g) in enumerate(zip(french_divs, german_divs)):
+        if g <= f:
+            cross_month = i + 1
+            break
+
+    if cross_month:
+        fig.add_vline(
+            x=cross_month,
+            line_dash="dash",
+            line_color="#27AE60",
+            annotation_text=f"Punto de Cruce (Mes {cross_month})",
+            annotation_position="top right",
+        )
+
+    fig.update_layout(
+        title="<b>Perfil de Dividendos: Sistema Alemán vs. Francés</b>",
+        xaxis_title="Mes del Crédito",
+        yaxis_title="Dividendo Mensual Total (UF)",
+        template="plotly_white",
+        height=450,
+        legend=dict(x=0.02, y=0.98),
+        margin=dict(l=40, r=40, t=60, b=40),
+    )
+    return fig
+
+
+def create_actuarial_insurability_gauge(maturity_age: int, status: str) -> go.Figure:
+    """Genera un indicador gráfico tipo velocímetro / gauge para la edad al vencimiento del crédito."""
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=maturity_age,
+        title={"text": f"<b>Edad al Vencimiento ({maturity_age} años) - {status}</b>", "font": {"size": 16}},
+        gauge={
+            "axis": {"range": [18, 90], "tickwidth": 1, "tickcolor": "#2C3E50"},
+            "bar": {"color": "#1B4F72", "thickness": 0.3},
+            "bgcolor": "white",
+            "borderwidth": 2,
+            "bordercolor": "#BDC3C7",
+            "steps": [
+                {"range": [18, 70], "color": "#D4EFDF"},
+                {"range": [70, 75], "color": "#FCF3CF"},
+                {"range": [75, 80], "color": "#FAD7A0"},
+                {"range": [80, 90], "color": "#FADBD8"},
+            ],
+            "threshold": {
+                "line": {"color": "#C0392B", "width": 4},
+                "thickness": 0.8,
+                "value": maturity_age,
+            },
+        },
+    ))
+
+    fig.update_layout(
+        height=320,
+        margin=dict(l=30, r=30, t=50, b=30),
+    )
+    return fig
+

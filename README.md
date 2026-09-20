@@ -152,7 +152,7 @@ ruff check .
 | **Hito 5** | ✅ Completado | Dashboard Interactivo en Streamlit (5 pestañas, Plotly y drag & drop). |
 | **Hito 6** | ✅ Completado | DevOps: Contenedorización Docker, `docker-compose.yml`, `.dockerignore` y CI/CD en GitHub Actions. |
 | **Hito 7** | ✅ Completado | Generador de Informe Ejecutivo y Dictamen de Portabilidad en PDF (ReportLab, gráficos vectoriales nativos y API). |
-| **Hito 8** | ⏳ Planificado | Módulo Financiero Avanzado (Abonos extraordinarios, tasa mixta vs fija, desgravamen por edad). |
+| **Hito 8** | ✅ Completado | Módulo Financiero Avanzado (Abonos extraordinarios, tasa mixta vs fija, desgravamen por edad, amortización alemana). |
 | **Hito 9** | ⏳ Planificado | Scraping Headless en Vivo con Playwright para cotizadores bancarios abiertos. |
 | **Hito 10** | ⏳ Planificado | UX Comercial Avanzada (Comparador Head-to-Head y persistencia de simulaciones). |
 

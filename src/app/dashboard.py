@@ -15,9 +15,14 @@ ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from src.core.amortizer import FrenchAmortizer, MortgageParams
+from src.core.amortizer import FrenchAmortizer, GermanAmortizer, MortgageParams
 from src.core.switching_costs import SwitchingCostCalculator
 from src.core.metrics import RefinanceAnalyzer
+from src.core.advanced_financial import (
+    PrepaymentSimulator,
+    MixedRateRiskAnalyzer,
+    LifeInsuranceActuary,
+)
 from src.scrapers.market_service import MarketDataService
 from src.parsers.statement_extractor import StatementExtractor
 from src.reports.pdf_generator import ExecutiveReportGenerator
@@ -27,6 +32,10 @@ from src.app.charts import (
     create_amortization_comparison_chart,
     create_sensitivity_heatmap,
     create_dividend_fallacy_chart,
+    create_prepayment_comparison_chart,
+    create_mixed_rate_stress_chart,
+    create_french_vs_german_chart,
+    create_actuarial_insurability_gauge,
 )
 
 
@@ -310,12 +319,13 @@ best_opp = market_eval.get("best_opportunity")
 # Pestañas Principales de la Aplicación
 # ============================================================================
 
-tab_market, tab_breakeven, tab_sim, tab_fallacy, tab_schedule = st.tabs([
+tab_market, tab_breakeven, tab_sim, tab_fallacy, tab_schedule, tab_advanced = st.tabs([
     "🏆 Comparador de Mercado",
     "📈 Punto de Equilibrio & Payback",
     "🎛️ Simulador a Medida & Sensibilidad",
     "⚠️ Detector de la 'Falacia del Dividendo'",
     "📋 Tabla de Amortización",
+    "🔬 Módulo Financiero Avanzado",
 ])
 
 
@@ -773,3 +783,349 @@ with tab_schedule:
         file_name=f"amortizacion_hiporefi_{title_tag}.csv",
         mime="text/csv",
     )
+
+
+# ----------------------------------------------------------------------------
+# PESTAÑA 6: Módulo Financiero y Normativo Avanzado (Hito 8)
+# ----------------------------------------------------------------------------
+with tab_advanced:
+    st.subheader("🔬 Módulo Financiero y Normativo Avanzado")
+    st.caption("Herramientas cuantitativas especializadas: Prepagos Parciales (LGB Art. 100), Estrés de Tasa Mixta, Curva Actuarial de Seguros y Amortización Alemana.")
+
+    sub_tab_prepay, sub_tab_mixed, sub_tab_actuary, sub_tab_german = st.tabs([
+        "💰 Abonos Extraordinarios (Prepagos)",
+        "⚖️ Tasa Mixta vs. Fija (Estrés)",
+        "🛡️ Desgravamen Actuarial & Edad",
+        "🇩🇪 Amortización Alemana vs. Francesa",
+    ])
+
+    # ------------------------------------------------------------------------
+    # SUB-PESTAÑA 1: Prepagos y Abonos Extraordinarios
+    # ------------------------------------------------------------------------
+    with sub_tab_prepay:
+        st.markdown("### 💰 Simulador de Abonos Extraordinarios y Prepagos Parciales")
+        st.markdown(
+            "Permite evaluar el impacto de inyectar liquidez al crédito hipotecario, "
+            "comparando las dos modalidades de la banca chilena bajo el marco regulatorio del **Art. 100 de la Ley General de Bancos**."
+        )
+
+        col_pre1, col_pre2, col_pre3 = st.columns(3)
+        with col_pre1:
+            prepay_input_uf = st.number_input(
+                "Monto del Abono Extraordinario (UF)",
+                min_value=10.0,
+                max_value=float(balance_uf),
+                value=min(300.0, float(balance_uf * 0.1)),
+                step=25.0,
+                help="Monto de capital a amortizar anticipadamente.",
+            )
+            st.caption(f"Equivalente a **${prepay_input_uf * uf_current:,.0f} CLP** ({prepay_input_uf / balance_uf * 100.1:.1f}% del saldo).")
+
+        with col_pre2:
+            penalty_months_input = st.number_input(
+                "Comisión de Prepago (Meses de interés devengado)",
+                min_value=0.0,
+                max_value=3.0,
+                value=1.5,
+                step=0.25,
+                help="LGB Art. 100 fija un tope máximo de 1.5 meses de intereses para créditos de vivienda de hasta 5.000 UF.",
+            )
+
+        with col_pre3:
+            prepay_eval = PrepaymentSimulator.simulate(
+                balance_uf=balance_uf,
+                annual_rate=current_rate_dec,
+                months_remaining=months_remaining,
+                prepayment_amount_uf=prepay_input_uf,
+                fire_insurance_monthly_uf=fire_insurance_uf,
+                life_insurance_rate_monthly=0.00028,
+                annual_discount_rate=discount_rate_dec,
+                penalty_months=penalty_months_input,
+            )
+            st.metric(
+                label="Comisión Legal de Prepago (LGB Art. 100)",
+                value=f"{prepay_eval.prepayment_penalty_uf:.2f} UF",
+                delta=f"${prepay_eval.prepayment_penalty_uf * uf_current:,.0f} CLP",
+                delta_color="inverse",
+            )
+
+        st.info(f"💡 Desembolso total en t=0 (Capital + Comisión): **{prepay_eval.total_cash_outlay_uf:.2f} UF** (${prepay_eval.total_cash_outlay_uf * uf_current:,.0f} CLP). Saldo restante: **{prepay_eval.new_balance_uf:.2f} UF**.")
+
+        # Comparativa lado a lado: Reducir Plazo vs Reducir Dividendo
+        opt_t = prepay_eval.reduce_term_option
+        opt_d = prepay_eval.reduce_dividend_option
+
+        col_opt_a, col_opt_b = st.columns(2)
+        with col_opt_a:
+            st.markdown("""
+            <div style="background-color: #EBF5FB; border-radius: 8px; padding: 16px; border-left: 5px solid #2980B9;">
+                <h4 style="margin: 0; color: #1B4F72;">Opción A: Reducir Plazo</h4>
+                <p style="color: #566573; font-size: 0.9rem; margin-top: 4px;">Mantiene el dividendo mensual y acorta el vencimiento del crédito.</p>
+            </div>
+            """, unsafe_allow_html=True)
+            m_a1, m_a2 = st.columns(2)
+            m_a1.metric("Nuevo Plazo", f"{opt_t.new_months} meses", f"-{opt_t.months_saved} meses ({opt_t.months_saved/12:.1f} años)")
+            m_a2.metric("Ahorro Intereses", f"{opt_t.interest_savings_uf:,.1f} UF", f"${opt_t.interest_savings_uf * uf_current:,.0f} CLP")
+            m_a3, m_a4 = st.columns(2)
+            m_a3.metric("Nuevo Dividendo", f"{opt_t.new_monthly_dividend_uf:.2f} UF")
+            m_a4.metric("Ganancia Patrimonial (VPN)", f"{opt_t.npv_uf:+,.1f} UF", f"${opt_t.npv_uf * uf_current:+,.0f} CLP")
+
+        with col_opt_b:
+            st.markdown("""
+            <div style="background-color: #EAFAF1; border-radius: 8px; padding: 16px; border-left: 5px solid #27AE60;">
+                <h4 style="margin: 0; color: #196F3D;">Opción B: Reducir Dividendo</h4>
+                <p style="color: #566573; font-size: 0.9rem; margin-top: 4px;">Mantiene el plazo restante original y reduce la cuota mensual.</p>
+            </div>
+            """, unsafe_allow_html=True)
+            m_b1, m_b2 = st.columns(2)
+            m_b1.metric("Alivio Mensual", f"-{opt_d.monthly_dividend_saving_uf:.2f} UF/mes", f"-${opt_d.monthly_dividend_saving_uf * uf_current:,.0f} CLP/mes")
+            m_b2.metric("Ahorro Intereses", f"{opt_d.interest_savings_uf:,.1f} UF", f"${opt_d.interest_savings_uf * uf_current:,.0f} CLP")
+            m_b3, m_b4 = st.columns(2)
+            m_b3.metric("Nuevo Dividendo", f"{opt_d.new_monthly_dividend_uf:.2f} UF")
+            m_b4.metric("Ganancia Patrimonial (VPN)", f"{opt_d.npv_uf:+,.1f} UF", f"${opt_d.npv_uf * uf_current:+,.0f} CLP")
+
+        # Recomendación técnica
+        st.success(f"🎯 **Dictamen Cuantitativo**: {prepay_eval.rationale}")
+
+        # Gráfico comparativo de flujos
+        p_term_params = MortgageParams(
+            principal=prepay_eval.new_balance_uf,
+            annual_rate=current_rate_dec,
+            months_remaining=opt_t.new_months,
+            fire_insurance_monthly_uf=fire_insurance_uf,
+            life_insurance_rate_monthly=0.00028,
+        )
+        sched_p_term = FrenchAmortizer.generate_schedule(p_term_params) if opt_t.new_months > 0 else []
+
+        p_div_params = MortgageParams(
+            principal=prepay_eval.new_balance_uf,
+            annual_rate=current_rate_dec,
+            months_remaining=months_remaining,
+            fire_insurance_monthly_uf=fire_insurance_uf,
+            life_insurance_rate_monthly=0.00028,
+        )
+        sched_p_div = FrenchAmortizer.generate_schedule(p_div_params)
+
+        fig_prepay = create_prepayment_comparison_chart(sched_curr, sched_p_term, sched_p_div)
+        st.plotly_chart(fig_prepay)
+
+    # ------------------------------------------------------------------------
+    # SUB-PESTAÑA 2: Modelado de Riesgo de Tasa Mixta vs. Fija
+    # ------------------------------------------------------------------------
+    with sub_tab_mixed:
+        st.markdown("### ⚖️ Modelado de Riesgo: Tasa Mixta vs. Tasa Fija")
+        st.markdown(
+            "Las ofertas con tasa fija a 3 o 5 años ofrecen dividendos iniciales atractivos, pero transfieren "
+            "el riesgo de variaciones en la Tasa de Política Monetaria (TPM) o costo de fondeo a partir del mes 37 o 61. "
+            "Esta herramienta proyecta escenarios de estrés y calcula la **Tasa de Quiebre (*Breakeven Rate*)**."
+        )
+
+        c_m1, c_m2, c_m3, c_m4 = st.columns(4)
+        with c_m1:
+            initial_mixed_rate_pct = st.number_input(
+                "Tasa Fija Inicial (%)",
+                min_value=1.0,
+                max_value=15.0,
+                value=3.90,
+                step=0.10,
+                help="Tasa promocional o fija durante los primeros K meses.",
+            )
+        with c_m2:
+            fixed_period_months = st.selectbox(
+                "Período Inicial Fijo",
+                [36, 60],
+                index=0,
+                format_func=lambda x: f"{x} meses ({x//12} años)",
+                help="Duración del tramo a tasa fija (típicamente 3 o 5 años en la banca chilena).",
+            )
+        with c_m3:
+            baseline_subsequent_pct = st.number_input(
+                "Tasa Variable Esperada Post-Fijo (%)",
+                min_value=1.0,
+                max_value=15.0,
+                value=4.80,
+                step=0.10,
+                help="Tasa esperada de mercado (spread + índice base) para el resto del crédito.",
+            )
+        with c_m4:
+            pure_fixed_rate_pct = st.number_input(
+                "Tasa de Crédito 100% Fijo Puro (%)",
+                min_value=1.0,
+                max_value=15.0,
+                value=4.60,
+                step=0.10,
+                help="Alternativa de crédito a tasa fija durante todo el plazo.",
+            )
+
+        mixed_eval = MixedRateRiskAnalyzer.evaluate(
+            principal_uf=balance_uf,
+            total_months=months_remaining,
+            fixed_period_months=fixed_period_months,
+            initial_fixed_rate_pct=initial_mixed_rate_pct,
+            baseline_subsequent_rate_pct=baseline_subsequent_pct,
+            pure_fixed_rate_pct=pure_fixed_rate_pct,
+            fire_insurance_monthly_uf=fire_insurance_uf,
+            life_insurance_rate_monthly=0.00028,
+            annual_discount_rate_pct=discount_rate_pct,
+        )
+
+        col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
+        col_kpi1.metric(
+            label="Tasa Variable de Quiebre (Breakeven)",
+            value=f"{mixed_eval.breakeven_variable_rate_pct:.2f}%",
+            delta=f"{mixed_eval.breakeven_variable_rate_pct - baseline_subsequent_pct:+.2f}% vs Base",
+            help="Umbral de tasa variable por sobre el cual el crédito mixto destruye el ahorro inicial frente al crédito 100% fijo.",
+        )
+        col_kpi2.metric(
+            label="Dividendo Fijo Puro",
+            value=f"{mixed_eval.pure_fixed_dividend_uf:.2f} UF/mes",
+            delta=f"${mixed_eval.pure_fixed_dividend_uf * uf_current:,.0f} CLP",
+        )
+        init_diff = mixed_eval.scenarios[1].initial_dividend_uf - mixed_eval.pure_fixed_dividend_uf
+        col_kpi3.metric(
+            label=f"Dividendo Inicial Tramo Fijo (Meses 1-{fixed_period_months})",
+            value=f"{mixed_eval.scenarios[1].initial_dividend_uf:.2f} UF/mes",
+            delta=f"{init_diff:+.2f} UF/mes",
+            delta_color="inverse",
+        )
+
+        st.info(f"📋 **Análisis Patrimonial**: {mixed_eval.recommendation_summary}")
+
+        # Tabla de escenarios de estrés
+        sc_data = []
+        for s in mixed_eval.scenarios:
+            sc_data.append({
+                "Escenario": s.scenario_name,
+                "Tasa Variable Post-Fijo": f"{s.variable_annual_rate_pct:.2f}%",
+                "Dividendo Inicial (1-K)": f"{s.initial_dividend_uf:.2f} UF",
+                "Dividendo Post-Reinicio": f"{s.subsequent_dividend_uf:.2f} UF",
+                "Salto de Dividendo": f"{s.dividend_jump_uf:+.2f} UF ({s.dividend_jump_pct:+.1f}%)",
+                "Costo Total Crédito": f"{s.total_cost_uf:,.1f} UF",
+                "VPN vs. Fijo Puro (UF)": f"{s.npv_vs_fixed_uf:+.2f} UF",
+                "VPN vs. Fijo Puro (CLP)": f"${s.npv_vs_fixed_uf * uf_current:+,.0f} CLP",
+            })
+        st.dataframe(pd.DataFrame(sc_data), height=180)
+
+        # Gráfico interactivo de trayectorias
+        fig_mixed = create_mixed_rate_stress_chart(
+            pure_fixed_dividend=mixed_eval.pure_fixed_dividend_uf,
+            scenarios=mixed_eval.scenarios,
+            fixed_period_months=fixed_period_months,
+            total_months=months_remaining,
+        )
+        st.plotly_chart(fig_mixed)
+
+    # ------------------------------------------------------------------------
+    # SUB-PESTAÑA 3: Desgravamen Actuarial & Edad
+    # ------------------------------------------------------------------------
+    with sub_tab_actuary:
+        st.markdown("### 🛡️ Curva Actuarial de Desgravamen y Reglas de Asegurabilidad por Edad")
+        st.markdown(
+            "En Chile, el seguro de desgravamen hipotecario está regulado por la CMF y licitado colectivamente. "
+            "Las primas mensuales escalan fuertemente con la edad del titular y existen topes máximos de permanencia (75 a 80 años)."
+        )
+
+        col_act1, col_act2 = st.columns([1, 1])
+        with col_act1:
+            debtor_age = st.slider("Edad Actual del Deudor (Años)", min_value=18, max_value=85, value=42, step=1)
+            loan_years = st.slider("Plazo Solicitado (Años)", min_value=5, max_value=35, value=min(25, max(5, int(months_remaining / 12))), step=1)
+
+            ins_eval = LifeInsuranceActuary.evaluate_insurability(debtor_age, loan_years)
+
+            if ins_eval.status == "ESTÁNDAR":
+                st.success(f"✅ **Estado de Asegurabilidad**: {ins_eval.status} (Riesgo {ins_eval.risk_level})\n\n{ins_eval.regulatory_alert}")
+            elif ins_eval.status == "OBSERVACIÓN":
+                st.warning(f"⚠️ **Estado de Asegurabilidad**: {ins_eval.status} (Riesgo {ins_eval.risk_level})\n\n{ins_eval.regulatory_alert}")
+            elif ins_eval.status == "RESTRICCIÓN_MÉDICA":
+                st.error(f"🚨 **Estado de Asegurabilidad**: {ins_eval.status} (Riesgo {ins_eval.risk_level})\n\n{ins_eval.regulatory_alert}")
+            else:
+                st.error(f"⛔ **Estado de Asegurabilidad**: {ins_eval.status} (Riesgo {ins_eval.risk_level})\n\n{ins_eval.regulatory_alert}")
+
+            st.markdown("#### Requisitos Médicos y de Suscripción Esperados:")
+            for req in ins_eval.medical_requirements:
+                st.markdown(f"- {req}")
+
+        with col_act2:
+            fig_gauge = create_actuarial_insurability_gauge(ins_eval.maturity_age, ins_eval.status)
+            st.plotly_chart(fig_gauge)
+
+            st.markdown("#### Escala de Primas de Mercado por Tramo Etario:")
+            st.dataframe(pd.DataFrame(ins_eval.age_bracket_table), height=200)
+
+        # Análisis Dinámico vs Tasa Plana
+        st.markdown("---")
+        st.markdown("#### Comparación de Costo de Desgravamen: Tasa Plana vs. Escalamiento Dinámico por Edad")
+        sched_dyn, dyn_metrics = LifeInsuranceActuary.generate_dynamic_schedule(
+            principal=balance_uf,
+            annual_rate=current_rate_dec,
+            months=loan_years * 12,
+            start_age=debtor_age,
+            fire_insurance_monthly_uf=fire_insurance_uf,
+        )
+        col_dyn1, col_dyn2, col_dyn3 = st.columns(3)
+        col_dyn1.metric("Desgravamen Tasa Plana (0.028% mensual)", f"{dyn_metrics['flat_total_life_insurance_uf']:,.2f} UF", f"${dyn_metrics['flat_total_life_insurance_uf'] * uf_current:,.0f} CLP")
+        col_dyn2.metric("Desgravamen Dinámico (Escala Actuarial)", f"{dyn_metrics['dynamic_total_life_insurance_uf']:,.2f} UF", f"${dyn_metrics['dynamic_total_life_insurance_uf'] * uf_current:,.0f} CLP")
+        col_dyn3.metric("Sobrecosto Actuarial Acumulado", f"{dyn_metrics['insurance_cost_difference_uf']:+,.2f} UF", f"${dyn_metrics['insurance_cost_difference_uf'] * uf_current:+,.0f} CLP", delta_color="inverse")
+
+    # ------------------------------------------------------------------------
+    # SUB-PESTAÑA 4: Amortización Alemana vs. Francesa
+    # ------------------------------------------------------------------------
+    with sub_tab_german:
+        st.markdown("### 🇩🇪 Sistema de Amortización Alemán (Cuota Decreciente)")
+        st.markdown(
+            "A diferencia del sistema francés (cuota constante), el **sistema alemán** amortiza una cantidad fija de capital cada mes. "
+            "El dividendo inicial es más alto (exigiendo mayor renta demostrable), pero decrece mes a mes y genera un **ahorro significativo de intereses totales**."
+        )
+
+        german_comp = GermanAmortizer.compare_french_vs_german(params_curr)
+
+        col_g1, col_g2, col_g3, col_g4 = st.columns(4)
+        col_g1.metric(
+            "Dividendo Inicial Alemán",
+            f"{german_comp['german_initial_total_dividend_uf']:.2f} UF/mes",
+            f"+{german_comp['initial_dividend_diff_uf']:.2f} UF (+${german_comp['initial_dividend_diff_uf'] * uf_current:,.0f} CLP)",
+            delta_color="inverse",
+            help="El primer dividendo es más alto debido a la amortización constante de capital.",
+        )
+        col_g2.metric(
+            "Dividendo Final Alemán",
+            f"{german_comp['german_final_total_dividend_uf']:.2f} UF/mes",
+            f"{german_comp['german_final_total_dividend_uf'] - german_comp['french_initial_total_dividend_uf']:.2f} UF vs Francés",
+            help="El dividendo del último mes es el más bajo del crédito.",
+        )
+        col_g3.metric(
+            "Ahorro Total de Intereses",
+            f"{german_comp['interest_savings_uf']:,.1f} UF",
+            f"${german_comp['interest_savings_uf'] * uf_current:,.0f} CLP ({german_comp['interest_savings_pct']:.1f}%)",
+            delta_color="normal",
+            help="Intereses ahorrados durante todo el crédito eligiendo el sistema alemán.",
+        )
+        col_g4.metric(
+            "Dividendo Francés (Constante)",
+            f"{german_comp['french_initial_total_dividend_uf']:.2f} UF/mes",
+            f"${german_comp['french_initial_total_dividend_uf'] * uf_current:,.0f} CLP",
+        )
+
+        # Gráfico comparativo Francés vs Alemán
+        sched_german = GermanAmortizer.generate_schedule(params_curr)
+        fig_fg = create_french_vs_german_chart(sched_curr, sched_german)
+        st.plotly_chart(fig_fg)
+
+        # Tabla comparativa de los primeros 12 meses
+        st.markdown("#### Detalle Comparativo Primeros 12 Meses:")
+        comp_rows = []
+        for i in range(min(12, len(sched_curr))):
+            f_r = sched_curr[i]
+            g_r = sched_german[i]
+            comp_rows.append({
+                "Mes": f_r["month"],
+                "Dividendo Francés (UF)": f"{f_r['total_dividend_uf']:.2f}",
+                "Amort. Francés (UF)": f"{f_r['amortization_uf']:.2f}",
+                "Interés Francés (UF)": f"{f_r['interest_uf']:.2f}",
+                "Dividendo Alemán (UF)": f"{g_r['total_dividend_uf']:.2f}",
+                "Amort. Alemán (UF)": f"{g_r['amortization_uf']:.2f}",
+                "Interés Alemán (UF)": f"{g_r['interest_uf']:.2f}",
+                "Diferencia Dividendo (UF)": f"{g_r['total_dividend_uf'] - f_r['total_dividend_uf']:+.2f}",
+            })
+        st.dataframe(pd.DataFrame(comp_rows), height=250)
+
