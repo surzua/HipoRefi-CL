@@ -1,6 +1,5 @@
 """Persistencia en DuckDB para series macroeconómicas y ofertas de tasas bancarias chilenas."""
 
-import os
 from pathlib import Path
 from datetime import datetime, date
 from typing import List, Dict, Any, Optional

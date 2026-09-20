@@ -567,34 +567,93 @@ class CentralBankChileClient:
 
 ## 6. Plan de Trabajo e Hitos de Ejecución
 
-| Semana | Hito / Entregable | Objetivos Específicos |
-| :---: | :--- | :--- |
-| **S1** | **Core Matemático & Unit Tests** | Implementar `amortizer.py`, `switching_costs.py` y `metrics.py`. Configurar suite de pruebas unitarias con `pytest` validando contra simulaciones oficiales de la CMF. |
-| **S2** | **Ingesta de Datos & Base DuckDB** | Construir el cliente del Banco Central y scrapers headless con Playwright para cotizadores de 3 bancos (Santander, Banco de Chile, BancoEstado). Almacenar snapshots en DuckDB. |
-| **S3** | **Extracción de Cartolas (LLM)** | Integrar `pypdf` con el schema Pydantic de extracción. Calibrar prompts con 5 formatos reales de cartolas bancarias (Banco de Chile, Santander, Scotiabank, BCI, Itaú). |
-| **S4** | **API Backend (FastAPI)** | Exponer endpoints REST: `/api/v1/simulate`, `/api/v1/evaluate-refinance`, `/api/v1/extract-statement` y `/api/v1/market-rates`. |
-| **S5** | **Interfaz de Usuario (Streamlit/Next.js)** | Crear vista interactiva con subida de archivo PDF drag-and-drop, sliders de sensibilidad y gráficos dinámicos de punto de equilibrio con Plotly. |
-| **S6** | **Despliegue & Publicación en Portafolio** | Contenedorizar con Docker, publicar en servidor gratuito/económico (Fly.io, Railway o Streamlit Community) y redactar el artículo técnico para LinkedIn/GitHub. |
+| Semana / Hito | Estado | Entregable | Objetivos Específicos |
+| :---: | :---: | :--- | :--- |
+| **Hito 1 (S1)** | ✅ **Completado** | **Core Matemático & Unit Tests** | Implementar `amortizer.py`, `switching_costs.py` y `metrics.py`. Suite de pruebas unitarias con `pytest` validando contra estándares CMF y Ley N° 21.236. |
+| **Hito 2 (S2)** | ✅ **Completado** | **Ingesta de Datos & Base DuckDB** | Construir cliente BCCh (`si3.bcentral.cl`), conector CMF, catálogo de entidades (`bank_simulators.py`) y persistencia robusta en `market_store.py` (DuckDB) con soporte de concurrencia. |
+| **Hito 3 (S3)** | ✅ **Completado** | **Extracción de Cartolas (Heurística + LLM)** | Extractor dual con `pypdf`, parser heurístico multiformato (Banco de Chile, Estado, Santander, BCI) y fallback a LLMs estructurados con Pydantic. |
+| **Hito 4 (S4)** | ✅ **Completado** | **API Backend (FastAPI)** | Endpoints REST `/simulate`, `/evaluate-refinance`, `/extract-statement` y `/market-rates` con validación de esquemas Pydantic y documentación OpenAPI/Swagger. |
+| **Hito 5 (S5)** | ✅ **Completado** | **Interfaz de Usuario (Streamlit)** | Dashboard interactivo con 5 pestañas (Comparador, Payback, Simulador a Medida, Falacia del Dividendo, Tabla de Amortización), carga drag & drop y gráficos Plotly. |
+| **Hito 6 (S6)** | ✅ **Completado** | **Despliegue, Contenedorización & CI/CD** | `Dockerfile` optimizado multi-servicio, `docker-compose.yml` con volumen DuckDB compartido, `.dockerignore`, workflow en GitHub Actions (`.github/workflows/ci.yml`) y configuración de linting con `ruff`. |
+| **Hito 7 (S7)** | ⏳ *Planificado* | **Informe Ejecutivo y Dictamen en PDF** | Generador de dictamen formal para clientes y brokers hipotecarios con gráficos embebidos, sellos legales Ley 21.236 y descarga directa desde el Dashboard y la API. |
+| **Hito 8 (S8)** | ⏳ *Planificado* | **Módulo Financiero y Normativo Avanzado** | Simulador de abonos extraordinarios (prepagos parciales), modelado de riesgo de tasa mixta vs. fija, reglas de asegurabilidad/desgravamen por edad y sistema de amortización alemán. |
+| **Hito 9 (S9)** | ⏳ *Planificado* | **Ingesta en Vivo con Web Scraping Headless** | Scrapers automatizados con `playwright` sobre cotizadores bancarios abiertos de Chile para refrescar periódicamente la base `bank_offers` en DuckDB. |
+| **Hito 10 (S10)** | ⏳ *Planificado* | **UX Comercial Avanzada & Persistencia** | Comparador Head-to-Head entre dos entidades, modal de confirmación de extracción documental y persistencia de simulaciones guardadas por usuario. |
 
 ---
 
 ## 7. Instrucciones para Arrancar el Entorno
 
+### Opción A: Ejecución Local con Entorno Virtual
 ```bash
-# 1. Clonar o inicializar repositorio
-mkdir hipo-refi-cl && cd hipo-refi-cl
-git init
-
-# 2. Configurar entorno virtual con uv o venv
-uv venv .venv --python 3.11
+# 1. Activar entorno virtual
 source .venv/bin/activate
 
-# 3. Instalar dependencias esenciales
-uv pip install numpy pandas polars duckdb requests pydantic fastapi uvicorn streamlit plotly playwright pytest python-dotenv
+# 2. Iniciar Dashboard Interactivo (Streamlit)
+streamlit run src/app/dashboard.py
+# Disponible en: http://localhost:8501
 
-# 4. Instalar navegadores de Playwright para scraping
-playwright install chromium
+# 3. Iniciar API REST Backend (FastAPI) en terminal paralela
+uvicorn src.app.api:app --reload --port 8000
+# Documentación Swagger en: http://localhost:8000/docs
 
-# 5. Ejecutar los tests de consistencia matemática
-pytest tests/
+# 4. Ejecutar pruebas unitarias y linters
+pytest tests/ -v
+ruff check .
 ```
+
+### Opción B: Ejecución con Docker y Docker Compose
+```bash
+# Construir y levantar tanto la API como el Dashboard en segundo plano
+docker compose up --build -d
+
+# Ver logs de los servicios
+docker compose logs -f
+
+# Detener los contenedores
+docker compose down
+```
+
+---
+
+## 8. Especificaciones Técnicas Detalladas de Hitos Futuros
+
+### 📑 Hito 7: Generador de Informe Ejecutivo y Dictamen de Portabilidad en PDF
+- **Objetivo de Negocio:** Permitir a usuarios particulares y a asesores hipotecarios descargar un documento formal listo para imprimir o presentar ante ejecutivos bancarios como respaldo técnico de negociación.
+- **Componentes Arquitectónicos:**
+  1. `src/reports/pdf_generator.py`: Motor de maquetación vectorial basado en `reportlab` o `weasyprint` con plantilla corporativa formal chilena.
+  2. **Estructura del Informe (2 a 3 páginas):**
+     - **Portada y Encabezado:** Identificación del deudor, fecha, valor UF vigente y entidad acreedora actual.
+     - **Resumen Ejecutivo y Semáforo:** Dictamen cuantitativo destacado con recuadros de color (RECOMENDADO / EVALUAR CON CAUTELA / NO CONVIENE), VPN total en UF y CLP, y ahorro mensual.
+     - **Desglose Jurídico de Costos:** Tabla pormenorizada con comisiones de prepago (Art. 100 LGB), aranceles CBR con 50% de beneficio (Ley 21.236), exención de timbres (D.L. 3475) y gastos notariales.
+     - **Gráficos Embebidos:** Renderizado estático de la curva de Payback/Break-Even y de la comparativa de dividendos.
+     - **Comparativa de Entidades:** Tabla con las 3 mejores opciones del mercado.
+  3. **Integración:**
+     - Endpoint API: `GET /api/v1/reports/pdf?balance_uf=...`
+     - Botón de descarga en el Dashboard Streamlit en la pestaña de resultados.
+
+### 🇨🇱 Hito 8: Módulo Financiero y Normativo Avanzado
+- **Objetivo Cuantitativo:** Extender la granularidad del motor matemático para responder a escenarios sofisticados de la banca chilena:
+  1. **Simulador de Abonos Extraordinarios (Prepagos Parciales):**
+     - Modelar el impacto de inyectar liquidez al momento del refinanciamiento.
+     - Función comparativa de optimización: ¿Conviene más reducir plazo manteniendo cuota o reducir dividendo manteniendo plazo?
+  2. **Modelado de Riesgo en Tasa Mixta vs. Fija:**
+     - Las opciones con tasa fija a 3 o 5 años suelen ofrecer tasas iniciales menores, pero trasladan el riesgo al cliente al año 4 o 6.
+     - Generación de matrices de estrés proyectando trayectorias de TPM (escenario base, alcista +150 bps, bajista -150 bps) para evaluar la probabilidad de que una tasa mixta resulte destructiva de patrimonio frente a una fija pura.
+  3. **Curva Actuarial de Desgravamen y Topes de Edad:**
+     - Implementar escalamiento de prima de desgravamen por tramos de edad ($\tau(\text{edad})$).
+     - Alerta de asegurabilidad: notificación técnica cuando la edad del titular al vencimiento del crédito supere los 75 u 80 años.
+  4. **Amortización Alemana (Cuota Decreciente):**
+     - Extender `amortizer.py` con `GermanAmortizer` para instituciones que ofrecen cuota fija de capital (como BancoEstado en ciertas líneas).
+
+### 🤖 Hito 9: Ingesta en Vivo con Web Scraping Headless
+- **Objetivo de Datos:** Automatizar la actualización de tasas reales directamente desde los cotizadores en línea de los bancos:
+  1. `src/scrapers/headless_scrapers.py`: Implementación con `playwright` en modo headless para los simuladores públicos de BancoEstado, Santander y BCI.
+  2. Extracción de dividendos brutos, primas de seguros y CAE informada.
+  3. Script programable (`scripts/sync_live_market.py`) para ejecución semanal o bajo demanda, actualizando automáticamente la tabla `bank_offers` en DuckDB.
+
+### 🎨 Hito 10: UX Comercial Avanzada y Persistencia de Sesiones
+- **Objetivo de Producto:** Optimizar la experiencia de usuario y convertir el dashboard en una herramienta de productividad recurrente:
+  1. **Comparador Lado a Lado (Head-to-Head):** Selector de dos bancos específicos para comparar simultáneamente dividendo, CAE, seguros, VPN y tabla cuota a cuota.
+  2. **Modal Interactivo de Validación Documental:** Pre-visualización de las variables extraídas de la cartola PDF con posibilidad de ajuste manual antes de recalcular.
+  3. **Persistencia de Simulaciones:** Capacidad de guardar escenarios de simulación y compartirlos vía URL parametrizada (`?balance=3200&rate=5.2&months=180`).

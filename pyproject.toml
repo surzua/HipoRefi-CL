@@ -49,3 +49,17 @@ pythonpath = ["src"]
 python_files = "test_*.py"
 python_functions = "test_*"
 
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+exclude = [
+    ".venv",
+    "notebooks",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501", "E402", "W291", "W293"]
+

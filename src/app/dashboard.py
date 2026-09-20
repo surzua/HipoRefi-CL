@@ -20,7 +20,6 @@ from src.core.switching_costs import SwitchingCostCalculator
 from src.core.metrics import RefinanceAnalyzer
 from src.scrapers.market_service import MarketDataService
 from src.parsers.statement_extractor import StatementExtractor
-from src.parsers.pdf_reader import PDFReader
 from src.app.charts import (
     create_market_npv_chart,
     create_payback_trajectory_chart,

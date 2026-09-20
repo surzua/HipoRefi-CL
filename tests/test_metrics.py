@@ -1,6 +1,5 @@
 """Pruebas unitarias para RefinanceAnalyzer y decisiones financieras (VPN, Payback)."""
 
-import pytest
 from src.core.amortizer import FrenchAmortizer, MortgageParams
 from src.core.switching_costs import SwitchingCostCalculator
 from src.core.metrics import RefinanceAnalyzer

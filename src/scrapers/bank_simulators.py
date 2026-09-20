@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
-from datetime import datetime
 
 from src.core.amortizer import FrenchAmortizer, MortgageParams
 

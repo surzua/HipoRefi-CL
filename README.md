@@ -106,18 +106,76 @@ uvicorn src.app.api:app --reload --host 0.0.0.0 --port 8000
 
 ---
 
+## 🐳 Despliegue con Docker y Docker Compose
+
+La plataforma incluye contenedorización lista para producción. Puedes levantar simultáneamente la API REST y el Dashboard interactivo con un solo comando:
+
+```bash
+# Construir y levantar servicios en segundo plano
+docker compose up --build -d
+
+# Ver logs en tiempo real
+docker compose logs -f
+
+# Detener los contenedores
+docker compose down
+```
+
+* **Dashboard Web:** [http://localhost:8501](http://localhost:8501)
+* **API REST & Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
+* **Persistencia:** Volumen compartido `hiporefi_data` para DuckDB.
+
+---
+
+## 🧪 Pruebas Unitarias y Calidad de Código
+
+El proyecto cuenta con una suite completa de 49 pruebas unitarias y de integración, además de validación de estilo con `ruff` e integración continua en GitHub Actions (`.github/workflows/ci.yml`):
+
+```bash
+# Ejecutar suite de pruebas con cobertura
+pytest tests/ -v --cov=src
+
+# Chequeo de calidad y estilo de código
+ruff check .
+```
+
+---
+
+## 🗺️ Hoja de Ruta del Proyecto (Roadmap)
+
+| Hito | Estado | Descripción |
+| :---: | :---: | :--- |
+| **Hito 1** | ✅ Completado | Core Matemático (Amortización francesa en UF, seguros y 49 unit tests). |
+| **Hito 2** | ✅ Completado | Ingesta de Mercado y Persistencia en DuckDB (BCCh, CMF y simuladores). |
+| **Hito 3** | ✅ Completado | Extracción Documental de Cartolas PDF (heurística regex + fallback LLM). |
+| **Hito 4** | ✅ Completado | API REST Backend en FastAPI (`/simulate`, `/evaluate-refinance`, `/health`). |
+| **Hito 5** | ✅ Completado | Dashboard Interactivo en Streamlit (5 pestañas, Plotly y drag & drop). |
+| **Hito 6** | ✅ Completado | DevOps: Contenedorización Docker, `docker-compose.yml`, `.dockerignore` y CI/CD en GitHub Actions. |
+| **Hito 7** | ⏳ Planificado | Generador de Informe Ejecutivo y Dictamen de Portabilidad en PDF. |
+| **Hito 8** | ⏳ Planificado | Módulo Financiero Avanzado (Abonos extraordinarios, tasa mixta vs fija, desgravamen por edad). |
+| **Hito 9** | ⏳ Planificado | Scraping Headless en Vivo con Playwright para cotizadores bancarios abiertos. |
+| **Hito 10** | ⏳ Planificado | UX Comercial Avanzada (Comparador Head-to-Head y persistencia de simulaciones). |
+
+---
+
 ## 📂 Arquitectura del Proyecto
 
 ```text
 hipo-refi-cl/
+├── .github/workflows/  # CI/CD (GitHub Actions)
 ├── docs/               # Especificaciones técnicas y regulatorias
 ├── data/               # DuckDB y series de datos de mercado
+├── scripts/            # Scripts CLI de demostración y utilidades
 ├── src/
-│   ├── core/           # Motor financiero (Amortización, Costos, Métricas)
+│   ├── core/           # Motor financiero (Amortización, Costos Ley 21.236, Métricas)
 │   ├── scrapers/       # Clientes BCCh, CMF y cotizadores bancarios
 │   ├── parsers/        # Extracción y parsing de cartolas PDF
-│   └── app/            # API REST (FastAPI) y Dashboard interactivo
-└── tests/              # Suite de pruebas unitarias
+│   ├── data/           # Persistencia en DuckDB con manejo de concurrencia
+│   └── app/            # API REST (FastAPI), Dashboard (Streamlit) y Gráficos (Plotly)
+├── tests/              # Suite de 49 pruebas unitarias
+├── Dockerfile          # Contenedor optimizado multi-servicio
+├── docker-compose.yml  # Orquestador API + Dashboard + DuckDB
+└── pyproject.toml      # Configuración de dependencias, hatchling, pytest y ruff
 ```
 
 ---

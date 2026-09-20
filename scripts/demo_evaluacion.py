@@ -93,7 +93,6 @@ def main():
         balance_uf=extracted_data.current_balance_uf,
         current_annual_rate=extracted_data.annual_interest_rate_pct / 100.0,
     )
-    costs_dict = costs.to_dict()
 
     print(f"   • Comisión Prepago (LGB Art. 100, máx 1.5 meses int.) : {costs.prepayment_penalty_uf:.2f} UF (${market_service.convert_uf_to_clp(costs.prepayment_penalty_uf):,.0f} CLP)")
     print(f"   • Arancel CBR (Ley 21.236, 50% desc. subrogación)     : {costs.cbr_uf:.2f} UF (${market_service.convert_uf_to_clp(costs.cbr_uf):,.0f} CLP)")
@@ -101,7 +100,7 @@ def main():
     print(f"   • Estudio de Títulos                                  : {costs.title_deed_uf:.2f} UF")
     print(f"   • Gastos Notariales                                   : {costs.notary_uf:.2f} UF")
     print(f"   • Impuesto Timbres y Estampillas (D.L. 3475)          : {costs.stamp_tax_uf:.2f} UF (EXENTO)")
-    print(f"   -------------------------------------------------------------------")
+    print("   -------------------------------------------------------------------")
     print(f"   TOTAL GASTOS DE CIERRE ($G_k$): {costs.total_cost_uf:.2f} UF (${market_service.convert_uf_to_clp(costs.total_cost_uf):,.0f} CLP)")
 
     # -------------------------------------------------------------

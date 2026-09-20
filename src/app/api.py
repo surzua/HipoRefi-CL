@@ -9,7 +9,6 @@ from typing import Optional, Dict, Any, List
 import io
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 
 from src.app.schemas import (
     SimulationRequest,
@@ -30,7 +29,6 @@ from src.core.switching_costs import SwitchingCostCalculator
 from src.core.metrics import RefinanceAnalyzer
 from src.scrapers.market_service import MarketDataService
 from src.parsers.statement_extractor import StatementExtractor
-from src.parsers.pdf_reader import PDFReader
 
 
 # ============================================================================

@@ -247,10 +247,7 @@ def create_dividend_fallacy_chart(
     """Compara el costo total acumulado de la deuda (capital + intereses) para ilustrar la Falacia del Dividendo."""
     curr_principal = current_schedule[0]["start_balance_uf"]
     curr_interest = sum(row["interest_uf"] for row in current_schedule)
-    curr_total = sum(row["total_dividend_uf"] for row in current_schedule)
-
     trap_interest = sum(row["interest_uf"] for row in trap_schedule)
-    trap_total = sum(row["total_dividend_uf"] for row in trap_schedule)
 
     categories = [current_label, trap_label]
     interest_vals = [curr_interest, trap_interest]

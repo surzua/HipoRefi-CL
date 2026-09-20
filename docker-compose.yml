@@ -1,0 +1,51 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hiporefi-api
+    command: ["uvicorn", "src.app.api:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    environment:
+      - DUCKDB_PATH=/app/data/market_rates.duckdb
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+    volumes:
+      - hiporefi_data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - hiporefi-net
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hiporefi-dashboard
+    command: ["streamlit", "run", "src/app/dashboard.py", "--server.port=8501", "--server.address=0.0.0.0"]
+    ports:
+      - "8501:8501"
+    environment:
+      - DUCKDB_PATH=/app/data/market_rates.duckdb
+    volumes:
+      - hiporefi_data:/app/data
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - hiporefi-net
+
+volumes:
+  hiporefi_data:
+    driver: local
+
+networks:
+  hiporefi-net:
+    driver: bridge

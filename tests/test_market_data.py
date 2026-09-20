@@ -3,7 +3,7 @@
 import pytest
 from src.data.market_store import MarketDataStore
 from src.scrapers.cmf_client import CMFClient
-from src.scrapers.bank_simulators import BankSimulatorProvider, BankQuote
+from src.scrapers.bank_simulators import BankSimulatorProvider
 from src.scrapers.market_service import MarketDataService
 from src.scrapers.bcch_client import CentralBankChileClient
 

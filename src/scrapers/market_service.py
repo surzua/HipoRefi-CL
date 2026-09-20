@@ -1,6 +1,5 @@
 """Servicio orquestador de datos de mercado, sincronización macro y cotizaciones bancarias."""
 
-import os
 import requests
 from typing import Dict, Any, List, Optional
 from datetime import date
@@ -11,7 +10,7 @@ from src.scrapers.cmf_client import CMFClient
 from src.scrapers.bank_simulators import BankSimulatorProvider, BankQuote
 from src.core.amortizer import FrenchAmortizer, MortgageParams
 from src.core.switching_costs import SwitchingCostCalculator
-from src.core.metrics import RefinanceAnalyzer, RefinanceDecision
+from src.core.metrics import RefinanceAnalyzer
 
 
 class MarketDataService:

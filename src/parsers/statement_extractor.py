@@ -4,7 +4,7 @@ import re
 import os
 import json
 from pathlib import Path
-from typing import Union, BinaryIO, Optional, Dict, Any
+from typing import Union, BinaryIO, Optional
 import requests
 
 from src.parsers.pdf_reader import PDFReader

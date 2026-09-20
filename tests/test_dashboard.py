@@ -4,7 +4,6 @@ import pytest
 import plotly.graph_objects as go
 
 from src.core.amortizer import FrenchAmortizer, MortgageParams
-from src.core.switching_costs import SwitchingCostCalculator
 from src.app.charts import (
     create_market_npv_chart,
     create_payback_trajectory_chart,

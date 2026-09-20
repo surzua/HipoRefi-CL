@@ -1,8 +1,7 @@
 """Cliente y procesador estadístico de tasas hipotecarias de la CMF (Comisión para el Mercado Financiero)."""
 
 from dataclasses import dataclass
-from typing import Dict, Any, List, Optional
-import requests
+from typing import Dict, Optional
 
 
 @dataclass

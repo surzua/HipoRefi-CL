@@ -1,0 +1,35 @@
+# Git
+.git
+.gitignore
+
+# Entornos virtuales y paquetes
+.venv/
+venv/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# Bytecode y cache de Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# IDE y editores
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Archivos de entorno y agentes locales
+.env
+.agents/
+
+# Logs y temporales
+*.log
+data/*.tmp

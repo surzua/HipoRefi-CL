@@ -1,7 +1,7 @@
 """Pruebas unitarias para SwitchingCostCalculator y costos de la Ley 21.236."""
 
 import pytest
-from src.core.switching_costs import SwitchingCostCalculator, SwitchingCostBreakdown
+from src.core.switching_costs import SwitchingCostCalculator
 
 
 def test_prepayment_penalty_lgb_art_100():

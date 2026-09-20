@@ -1,7 +1,6 @@
 """Pruebas unitarias para el motor de amortización francesa (FrenchAmortizer)."""
 
 import pytest
-import numpy as np
 from src.core.amortizer import FrenchAmortizer, MortgageParams
 
 

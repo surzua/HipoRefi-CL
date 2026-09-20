@@ -1,13 +1,10 @@
 """Pruebas unitarias para PDFReader y extracción estructurada de cartolas hipotecarias."""
 
 import pytest
-import io
-from pathlib import Path
 from src.parsers.pdf_reader import PDFReader, PDFReaderError
 from src.parsers.statement_extractor import (
     StatementExtractor,
     HeuristicStatementParser,
-    StatementExtractionError,
 )
 from src.parsers.statement_llm import MortgageStatementExtraction
 
