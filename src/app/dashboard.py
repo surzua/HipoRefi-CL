@@ -90,16 +90,8 @@ st.markdown("""
 # Inicialización de Servicios y Estado de Sesión
 # ============================================================================
 
-@st.cache_resource
-def load_market_service() -> MarketDataService:
-    return MarketDataService()
-
-@st.cache_resource
-def load_statement_extractor() -> StatementExtractor:
-    return StatementExtractor(mode="auto")
-
-market_service = load_market_service()
-extractor = load_statement_extractor()
+market_service = MarketDataService()
+extractor = StatementExtractor(mode="auto")
 
 # Inicialización de session state para parámetros del crédito
 if "balance_uf" not in st.session_state:
@@ -137,7 +129,7 @@ with col_uf:
     )
 
 with col_tpm:
-    tpm_val = macro_rates.get("F073.TPM.TCM.G01.Z.D", {}).get("value", overview.get("tpm_current", 4.50))
+    tpm_val = overview.get("tpm_current", 4.50)
     st.metric(
         label="TPM (Banco Central)",
         value=f"{tpm_val:.2f}%",

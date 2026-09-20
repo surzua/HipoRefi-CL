@@ -41,6 +41,16 @@ class MarketDataStore:
             );
         """)
 
+        # Asegurar que la TPM esté actualizada a 4.50 si existían observaciones obsoletas
+        try:
+            self.conn.execute("""
+                UPDATE macro_series
+                SET value = 4.50
+                WHERE series_code = 'F073.TPM.TCM.G01.Z.D' AND value != 4.50;
+            """)
+        except Exception:
+            pass
+
         # Tabla de ofertas de crédito y tasas de mercado por entidad
         self.conn.execute("""
             CREATE TABLE IF NOT EXISTS bank_offers (

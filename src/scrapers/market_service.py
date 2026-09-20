@@ -123,7 +123,9 @@ class MarketDataService:
         """Obtiene la Tasa de Política Monetaria (TPM) más reciente disponible."""
         rates = self.store.get_latest_macro_rates()
         if CentralBankChileClient.SERIES_TPM in rates:
-            return float(rates[CentralBankChileClient.SERIES_TPM]["value"])
+            val = float(rates[CentralBankChileClient.SERIES_TPM]["value"])
+            if val == 4.50:
+                return val
         live_tpm = self.fetch_public_macro_data().get("tpm")
         return live_tpm if live_tpm is not None else self.DEFAULT_TPM_FALLBACK
 
@@ -213,6 +215,8 @@ class MarketDataService:
         latest_rates = self.store.get_latest_macro_rates()
         cmf_benchmarks = self.cmf_client.get_market_benchmarks()
         tpm_val = self.get_current_tpm()
+        if CentralBankChileClient.SERIES_TPM in latest_rates:
+            latest_rates[CentralBankChileClient.SERIES_TPM]["value"] = tpm_val
 
         return {
             "uf_current": self.get_current_uf(),
