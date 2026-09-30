@@ -556,3 +556,50 @@ class GermanSimulationResponse(BaseModel):
     comparison_with_french: GermanComparisonDetail = Field(description="Comparación directa frente al sistema francés")
     schedule: Optional[List[AmortizationRow]] = Field(default=None, description="Tabla mes a mes si fue solicitada")
 
+
+# ============================================================================
+# Esquemas para Scraping Headless en Vivo (Hito 9)
+# ============================================================================
+
+class ScrapedOfferItem(BaseModel):
+    """Cotización hipotecaria extraída en vivo desde cotizador bancario con Playwright."""
+    bank_id: str = Field(description="Identificador del banco (ej: bancoestado, santander, bci)")
+    bank_name: str = Field(description="Nombre formal del banco")
+    loan_type: str = Field(description="Tipo de crédito hipotecario")
+    term_years: int = Field(description="Plazo del crédito en años")
+    principal_uf: float = Field(description="Monto financiado en UF")
+    property_value_uf: float = Field(description="Valor de la propiedad en UF")
+    annual_rate_pct: float = Field(description="Tasa de interés anual informada en porcentaje")
+    monthly_financial_dividend_uf: float = Field(description="Dividendo mensual bruto sin seguros en UF")
+    monthly_total_dividend_uf: float = Field(description="Dividendo mensual total a pagar con seguros en UF")
+    fire_insurance_uf: float = Field(description="Prima mensual de seguro de incendio y sismo en UF")
+    life_insurance_uf: float = Field(description="Prima mensual de seguro de desgravamen en UF")
+    cae_pct: float = Field(description="Carga Anual Equivalente (CAE) informada en porcentaje")
+    source: str = Field(description="Fuente de extracción (ej: PLAYWRIGHT_HEADLESS, HEADLESS_FALLBACK)")
+    timestamp: str = Field(description="Marca de tiempo de la extracción")
+    raw_metadata: Dict[str, Any] = Field(default_factory=dict, description="Metadatos técnicos adicionales de la simulación")
+
+
+class ScrapeSyncRequest(BaseModel):
+    """Parámetros para solicitar sincronización en vivo mediante scrapers headless."""
+    principal_uf: float = Field(default=3200.0, gt=0, description="Monto del crédito en UF", examples=[3200.0])
+    term_years: int = Field(default=20, gt=0, le=40, description="Plazo del crédito en años", examples=[20])
+    property_value_uf: Optional[float] = Field(default=None, gt=0, description="Valor del inmueble en UF")
+    banks: Optional[List[str]] = Field(default=None, description="Lista opcional de bancos a consultar (ej: ['bancoestado', 'santander', 'bci'])")
+    headless: bool = Field(default=True, description="Ejecución de navegador en modo headless")
+
+
+class ScrapeSyncResponse(BaseModel):
+    """Respuesta del proceso de sincronización con scrapers headless."""
+    status: str = Field(description="Estado de la operación ('SUCCESS', 'PARTIAL', 'ERROR')")
+    offers_scraped: int = Field(description="Cantidad de cotizaciones extraídas")
+    records_saved: int = Field(description="Cantidad de ofertas guardadas o actualizadas en DuckDB")
+    quotes: List[ScrapedOfferItem] = Field(description="Detalle de cotizaciones extraídas")
+    timestamp: str = Field(description="Marca temporal de finalización")
+
+
+class LiveOffersResponse(BaseModel):
+    """Respuesta de consulta de ofertas bancarias en vivo registradas en DuckDB."""
+    count: int = Field(description="Total de ofertas registradas")
+    offers: List[Dict[str, Any]] = Field(description="Lista de ofertas activas")
+

@@ -115,6 +115,8 @@ if "fire_insurance_uf" not in st.session_state:
     st.session_state["fire_insurance_uf"] = 0.70
 if "detected_bank" not in st.session_state:
     st.session_state["detected_bank"] = "Banco de Chile"
+if "prefer_live_scraped" not in st.session_state:
+    st.session_state["prefer_live_scraped"] = False
 
 
 # ============================================================================
@@ -309,6 +311,7 @@ market_eval = market_service.evaluate_refinance_against_market(
     current_total_dividend_uf=current_dividend_uf,
     fire_insurance_uf=fire_insurance_uf,
     finance_costs=finance_costs,
+    prefer_live_scraped=st.session_state.get("prefer_live_scraped", False),
 )
 
 opportunities = market_eval.get("all_opportunities", [])
@@ -334,20 +337,49 @@ tab_market, tab_breakeven, tab_sim, tab_fallacy, tab_schedule, tab_advanced = st
 # ----------------------------------------------------------------------------
 with tab_market:
     st.subheader("Benchmark de Mercado: Bancos y Mutuarias de Chile")
-    st.caption("Comparación de tu crédito actual contra las tasas comerciales vigentes modeladas según estándares CMF.")
+    st.caption("Comparación de tu crédito actual contra las tasas comerciales vigentes y cotizadores públicos en vivo.")
+
+    col_sync1, col_sync2 = st.columns([2, 1])
+    with col_sync1:
+        live_mode = st.toggle(
+            "🤖 Priorizar Cotizaciones en Vivo (Playwright Headless)",
+            value=st.session_state.get("prefer_live_scraped", False),
+            key="toggle_prefer_live_scraped",
+            help="Utiliza cotizaciones reales extraídas directamente de los simuladores web de BancoEstado, Santander y BCI guardadas en DuckDB.",
+        )
+        if live_mode != st.session_state.get("prefer_live_scraped", False):
+            st.session_state["prefer_live_scraped"] = live_mode
+            st.rerun()
+
+    with col_sync2:
+        if st.button("🔄 Sincronizar en Vivo Ahora", help="Ejecuta Playwright headless en segundo plano y actualiza DuckDB."):
+            with st.spinner("Ejecutando simuladores bancarios con Playwright..."):
+                target_years = max(5, round(months_remaining / 12))
+                sync_res = market_service.sync_from_live_scrapers(
+                    principal_uf=balance_uf,
+                    term_years=target_years,
+                    headless=True,
+                )
+                st.session_state["prefer_live_scraped"] = True
+                st.success(f"¡Sincronización completada! {sync_res['records_saved']} ofertas actualizadas.")
+                st.rerun()
 
     if best_opp:
         best_quote = best_opp["bank_quote"]
         best_decision = best_opp["evaluation"]
+        is_live_source = "PLAYWRIGHT" in best_quote.get("source", "").upper()
 
         # Tarjeta destacada de la mejor oportunidad
         st.markdown(f"""
         <div class="metric-card">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <h3 style="margin: 0; color: #1B4F72;">🥇 Mejor Alternativa: {best_quote['bank_name']}</h3>
-                <span class="{'badge-recommended' if best_decision['recommendation_flag'] == 'RECOMENDADO' else 'badge-caution'}">
-                    {best_decision['recommendation_flag']}
-                </span>
+                <div>
+                    {'<span style="background-color: #E8F8F5; color: #117A65; padding: 4px 10px; border-radius: 12px; font-weight: bold; margin-right: 8px;">🤖 En Vivo (Playwright)</span>' if is_live_source else ''}
+                    <span class="{'badge-recommended' if best_decision['recommendation_flag'] == 'RECOMENDADO' else 'badge-caution'}">
+                        {best_decision['recommendation_flag']}
+                    </span>
+                </div>
             </div>
             <p style="margin-top: 8px; color: #2C3E50;">{best_decision['rationale']}</p>
         </div>
@@ -473,12 +505,14 @@ with tab_market:
             "Institución": bq["bank_name"],
             "Tipo de Tasa": bq["loan_type"],
             "Tasa Anual (%)": f"{bq['annual_rate_pct']:.2f}%",
+            "CAE (%)": f"{bq.get('estimated_cae_pct', 0.0):.2f}%",
             "Dividendo (UF)": f"{bq['monthly_total_dividend_uf']:.2f} UF",
             "Dividendo (CLP)": f"${bq['monthly_total_dividend_uf'] * uf_current:,.0f}",
             "Ahorro Mensual": f"${ev['monthly_savings_uf'] * uf_current:+,.0f}",
             "VPN en UF": f"{ev['npv_uf']:+,.1f} UF",
             "Payback": f"{ev['payback_months']} meses" if ev['payback_months'] else "> Plazo",
             "Dictamen": ev["recommendation_flag"],
+            "Fuente": "🤖 Playwright Live" if "PLAYWRIGHT" in bq.get("source", "").upper() else "📐 Modelo CMF",
         })
 
     df_table = pd.DataFrame(table_data)

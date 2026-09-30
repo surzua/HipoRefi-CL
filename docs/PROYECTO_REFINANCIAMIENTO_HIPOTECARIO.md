@@ -577,7 +577,7 @@ class CentralBankChileClient:
 | **Hito 6 (S6)** | ✅ **Completado** | **Despliegue, Contenedorización & CI/CD** | `Dockerfile` optimizado multi-servicio, `docker-compose.yml` con volumen DuckDB compartido, `.dockerignore`, workflow en GitHub Actions (`.github/workflows/ci.yml`) y configuración de linting con `ruff`. |
 | **Hito 7 (S7)** | ✅ **Completado** | **Informe Ejecutivo y Dictamen en PDF** | Motor ReportLab (`ExecutiveReportGenerator`), gráficos vectoriales nativos de Payback/Break-Even, endpoint `POST /api/v1/reports/pdf` y botones de descarga directa en Streamlit. |
 | **Hito 8 (S8)** | ✅ **Completado** | **Módulo Financiero y Normativo Avanzado** | Simulador de abonos extraordinarios (prepagos parciales), modelado de riesgo de tasa mixta vs. fija, reglas de asegurabilidad/desgravamen por edad y sistema de amortización alemán. |
-| **Hito 9 (S9)** | ⏳ *Planificado* | **Ingesta en Vivo con Web Scraping Headless** | Scrapers automatizados con `playwright` sobre cotizadores bancarios abiertos de Chile para refrescar periódicamente la base `bank_offers` en DuckDB. |
+| **Hito 9 (S9)** | ✅ **Completado** | **Ingesta en Vivo con Web Scraping Headless** | Scrapers automatizados con `playwright` sobre cotizadores bancarios abiertos de Chile (BancoEstado, Santander, BCI), script programable `sync_live_market.py` y sincronización DuckDB. |
 | **Hito 10 (S10)** | ⏳ *Planificado* | **UX Comercial Avanzada & Persistencia** | Comparador Head-to-Head entre dos entidades, modal de confirmación de extracción documental y persistencia de simulaciones guardadas por usuario. |
 
 ---
@@ -646,11 +646,15 @@ docker compose down
   4. **Amortización Alemana (Cuota Decreciente):**
      - Extender `amortizer.py` con `GermanAmortizer` para instituciones que ofrecen cuota fija de capital (como BancoEstado en ciertas líneas).
 
-### 🤖 Hito 9: Ingesta en Vivo con Web Scraping Headless
+### 🤖 Hito 9: Ingesta en Vivo con Web Scraping Headless (Completado)
 - **Objetivo de Datos:** Automatizar la actualización de tasas reales directamente desde los cotizadores en línea de los bancos:
   1. `src/scrapers/headless_scrapers.py`: Implementación con `playwright` en modo headless para los simuladores públicos de BancoEstado, Santander y BCI.
-  2. Extracción de dividendos brutos, primas de seguros y CAE informada.
-  3. Script programable (`scripts/sync_live_market.py`) para ejecución semanal o bajo demanda, actualizando automáticamente la tabla `bank_offers` en DuckDB.
+  2. Extracción de dividendos brutos, primas de seguros (desgravamen, incendio/sismo) y CAE informada.
+  3. Arquitectura resiliente con fallback inteligente ante caídas o bloqueos de terceros.
+  4. Script programable (`scripts/sync_live_market.py`) para ejecución semanal o bajo demanda, actualizando automáticamente la tabla `bank_offers` en DuckDB.
+  5. Endpoints REST en FastAPI: `POST /api/v1/market-rates/scrape-sync` y `GET /api/v1/market-rates/live-offers`.
+  6. Integración en Streamlit con switch para priorizar ofertas en vivo y botón de sincronización directa.
+
 
 ### 🎨 Hito 10: UX Comercial Avanzada y Persistencia de Sesiones
 - **Objetivo de Producto:** Optimizar la experiencia de usuario y convertir el dashboard en una herramienta de productividad recurrente:

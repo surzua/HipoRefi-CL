@@ -232,21 +232,110 @@ class MarketDataService:
             },
         }
 
+    def get_live_bank_offers(self, term_years: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Consulta ofertas en DuckDB provenientes de web scrapers headless."""
+        all_offers = self.store.get_active_bank_offers(term_years=term_years)
+        return [
+            o for o in all_offers
+            if "PLAYWRIGHT" in o.get("source", "").upper() or "HEADLESS" in o.get("source", "").upper()
+        ]
+
+    def sync_from_live_scrapers(
+        self,
+        principal_uf: float = 3200.0,
+        term_years: int = 20,
+        property_value_uf: Optional[float] = None,
+        banks: Optional[List[str]] = None,
+        headless: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Ejecuta los scrapers headless de Playwright para cotizadores bancarios y
+        guarda las ofertas extraídas en DuckDB.
+        """
+        from src.scrapers.headless_scrapers import HeadlessMarketScraperCoordinator
+        coordinator = HeadlessMarketScraperCoordinator(headless=headless)
+        avg_rate = self.cmf_client.get_average_rate("bancos")
+        result = coordinator.sync_to_duckdb(
+            store=self.store,
+            principal_uf=principal_uf,
+            term_years=term_years,
+            property_value_uf=property_value_uf,
+            bank_ids=banks,
+            base_benchmark_rate=avg_rate,
+        )
+        return result
+
     def get_bank_quotes(
         self,
         principal_uf: float,
         term_years: int,
-        property_value_uf: Optional[float] = None
+        property_value_uf: Optional[float] = None,
+        prefer_live_scraped: bool = False,
     ) -> List[BankQuote]:
-        """Simula cotizaciones para todos los bancos comerciales."""
-        # Obtenemos la tasa de referencia de la CMF o DuckDB
+        """
+        Simula cotizaciones para todos los bancos comerciales.
+        Si prefer_live_scraped es True y hay ofertas de scrapers en DuckDB, las incorpora con prioridad.
+        """
         avg_rate = self.cmf_client.get_average_rate("bancos")
         simulator = BankSimulatorProvider(base_market_rate_pct=avg_rate)
-        return simulator.simulate_all_banks(
+        simulated_quotes = simulator.simulate_all_banks(
             principal_uf=principal_uf,
             term_years=term_years,
             property_value_uf=property_value_uf,
         )
+
+        if not prefer_live_scraped:
+            return simulated_quotes
+
+        live_offers = self.get_live_bank_offers(term_years=term_years)
+        if not live_offers:
+            return simulated_quotes
+
+        prop_val = property_value_uf or (principal_uf / 0.80)
+        quotes_dict = {q.bank_id: q for q in simulated_quotes}
+
+        for off in live_offers:
+            bank_name = off["bank_name"]
+            bank_id = off["id"].split("-")[0]
+            rate_pct = round(off["annual_rate"] * 100.0, 2)
+            rate_dec = off["annual_rate"]
+            months = term_years * 12
+            fire_rate = off.get("fire_insurance_rate_monthly", 0.00015)
+            life_rate = off.get("life_insurance_rate_monthly", 0.00028)
+            fire_uf = prop_val * 0.70 * fire_rate
+
+            params = MortgageParams(
+                principal=principal_uf,
+                annual_rate=rate_dec,
+                months_remaining=months,
+                fire_insurance_monthly_uf=fire_uf,
+                life_insurance_rate_monthly=life_rate,
+            )
+            schedule = FrenchAmortizer.generate_schedule(params)
+            first_m = schedule[0]
+
+            annual_ins_pct = ((fire_uf + first_m["life_insurance_uf"]) * 12 / principal_uf) * 100.0
+            cae_pct = round(rate_pct + annual_ins_pct, 2)
+
+            scraped_quote = BankQuote(
+                bank_id=bank_id,
+                bank_name=bank_name,
+                loan_type=off.get("loan_type", "Tasa Fija"),
+                term_years=term_years,
+                annual_rate_pct=rate_pct,
+                monthly_financial_dividend_uf=first_m["financial_dividend_uf"],
+                monthly_total_dividend_uf=first_m["total_dividend_uf"],
+                life_insurance_uf=first_m["life_insurance_uf"],
+                fire_insurance_uf=first_m["fire_insurance_uf"],
+                estimated_cae_pct=cae_pct,
+                spread_vs_market_pct=round(off.get("spread_over_benchmark", 0.0) * 100.0, 2),
+                source=off.get("source", "PLAYWRIGHT_HEADLESS"),
+            )
+            quotes_dict[bank_id] = scraped_quote
+
+        quotes = list(quotes_dict.values())
+        quotes.sort(key=lambda q: q.monthly_total_dividend_uf)
+        return quotes
 
     def evaluate_refinance_against_market(
         self,
@@ -258,13 +347,19 @@ class MarketDataService:
         life_insurance_rate: float = 0.00028,
         term_years_target: Optional[int] = None,
         finance_costs: bool = False,
+        prefer_live_scraped: bool = False,
     ) -> Dict[str, Any]:
         """
         Evalúa integralmente el crédito actual contra las mejores opciones disponibles
         en el mercado financiero chileno.
         """
         target_term = term_years_target or max(5, round(months_remaining / 12))
-        quotes = self.get_bank_quotes(principal_uf=current_balance_uf, term_years=target_term)
+        quotes = self.get_bank_quotes(
+            principal_uf=current_balance_uf,
+            term_years=target_term,
+            prefer_live_scraped=prefer_live_scraped,
+        )
+
 
         # Generar tabla del crédito actual
         params_current = MortgageParams(

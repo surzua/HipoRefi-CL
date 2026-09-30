@@ -35,6 +35,9 @@ from src.app.schemas import (
     GermanAmortizationRequest,
     GermanSimulationResponse,
     GermanComparisonDetail,
+    ScrapeSyncRequest,
+    ScrapeSyncResponse,
+    LiveOffersResponse,
 )
 from src.core.amortizer import FrenchAmortizer, GermanAmortizer, MortgageParams
 from src.core.switching_costs import SwitchingCostCalculator
@@ -611,6 +614,71 @@ def sync_market_rates(market_service: MarketDataService = Depends(get_market_ser
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Fallo en la sincronización: {str(e)}",
         )
+
+
+@app.post(
+    "/api/v1/market-rates/scrape-sync",
+    response_model=ScrapeSyncResponse,
+    summary="Sincronizar cotizaciones bancarias en vivo con scrapers headless de Playwright",
+    tags=["Datos de Mercado"],
+)
+def scrape_and_sync_market_rates(
+    payload: ScrapeSyncRequest = ScrapeSyncRequest(),
+    market_service: MarketDataService = Depends(get_market_service),
+) -> ScrapeSyncResponse:
+    """
+    Ejecuta en modo headless (Playwright) los simuladores públicos de BancoEstado,
+    Santander y BCI, extrayendo tasas, dividendos y CAE informada, persistiendo
+    los resultados en la tabla bank_offers de DuckDB.
+    """
+    try:
+        sync_result = market_service.sync_from_live_scrapers(
+            principal_uf=payload.principal_uf,
+            term_years=payload.term_years,
+            property_value_uf=payload.property_value_uf,
+            banks=payload.banks,
+            headless=payload.headless,
+        )
+        return ScrapeSyncResponse(
+            status=sync_result["status"],
+            offers_scraped=sync_result["offers_scraped"],
+            records_saved=sync_result["records_saved"],
+            quotes=sync_result["quotes"],
+            timestamp=sync_result["timestamp"],
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error en la sincronización con scrapers headless: {str(e)}",
+        )
+
+
+@app.get(
+    "/api/v1/market-rates/live-offers",
+    response_model=LiveOffersResponse,
+    summary="Consultar ofertas bancarias en vivo registradas en DuckDB",
+    tags=["Datos de Mercado"],
+)
+def get_live_bank_offers(
+    term_years: Optional[int] = None,
+    market_service: MarketDataService = Depends(get_market_service),
+) -> LiveOffersResponse:
+    """
+    Retorna las ofertas bancarias extraídas en vivo por los scrapers headless
+    y almacenadas en DuckDB, filtrables por plazo en años.
+    """
+    try:
+        offers = market_service.get_live_bank_offers(term_years=term_years)
+        return LiveOffersResponse(
+            count=len(offers),
+            offers=offers,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al consultar ofertas en vivo: {str(e)}",
+        )
+
 
 
 @app.post(

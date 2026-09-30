@@ -153,8 +153,29 @@ ruff check .
 | **Hito 6** | ✅ Completado | DevOps: Contenedorización Docker, `docker-compose.yml`, `.dockerignore` y CI/CD en GitHub Actions. |
 | **Hito 7** | ✅ Completado | Generador de Informe Ejecutivo y Dictamen de Portabilidad en PDF (ReportLab, gráficos vectoriales nativos y API). |
 | **Hito 8** | ✅ Completado | Módulo Financiero Avanzado (Abonos extraordinarios, tasa mixta vs fija, desgravamen por edad, amortización alemana). |
-| **Hito 9** | ⏳ Planificado | Scraping Headless en Vivo con Playwright para cotizadores bancarios abiertos. |
+| **Hito 9** | ✅ Completado | Ingesta en Vivo con Web Scraping Headless (Playwright sobre cotizadores de BancoEstado, Santander y BCI). |
 | **Hito 10** | ⏳ Planificado | UX Comercial Avanzada (Comparador Head-to-Head y persistencia de simulaciones). |
+
+---
+
+## 🤖 Web Scraping Headless en Vivo (Playwright)
+
+El sistema incluye extracción automatizada sobre cotizadores bancarios públicos abiertos en Chile para alimentar la tabla `bank_offers` en DuckDB:
+
+```bash
+# Sincronización CLI con Playwright Headless
+python scripts/sync_live_market.py --principal 3200 --term 20
+
+# Simulación en modo dry-run con salida formateada
+python scripts/sync_live_market.py --dry-run
+
+# Salida en JSON para pipelines automatizados
+python scripts/sync_live_market.py --dry-run --json
+```
+
+Endpoints disponibles en la API:
+- `POST /api/v1/market-rates/scrape-sync`: Dispara la simulación headless y actualiza DuckDB.
+- `GET /api/v1/market-rates/live-offers`: Consulta las ofertas bancarias vigentes extraídas.
 
 ---
 
@@ -165,15 +186,15 @@ hipo-refi-cl/
 ├── .github/workflows/  # CI/CD (GitHub Actions)
 ├── docs/               # Especificaciones técnicas y regulatorias
 ├── data/               # DuckDB y series de datos de mercado
-├── scripts/            # Scripts CLI de demostración y utilidades
+├── scripts/            # Scripts CLI (demostración y sync_live_market.py)
 ├── src/
 │   ├── core/           # Motor financiero (Amortización, Costos Ley 21.236, Métricas)
-│   ├── scrapers/       # Clientes BCCh, CMF y cotizadores bancarios
+│   ├── scrapers/       # Clientes BCCh, CMF, cotizadores y scrapers headless Playwright
 │   ├── parsers/        # Extracción y parsing de cartolas PDF
 │   ├── reports/        # Generador de informes y dictámenes ejecutivos en PDF (ReportLab)
 │   ├── data/           # Persistencia en DuckDB con manejo de concurrencia
 │   └── app/            # API REST (FastAPI), Dashboard (Streamlit) y Gráficos (Plotly)
-├── tests/              # Suite de 54 pruebas unitarias
+├── tests/              # Suite de 88 pruebas unitarias e integrales
 ├── Dockerfile          # Contenedor optimizado multi-servicio
 ├── docker-compose.yml  # Orquestador API + Dashboard + DuckDB
 └── pyproject.toml      # Configuración de dependencias, hatchling, pytest y ruff
@@ -184,3 +205,4 @@ hipo-refi-cl/
 ## 📜 Licencia
 
 Distribuido bajo la Licencia MIT. Consulta `LICENSE` para más detalles.
+
