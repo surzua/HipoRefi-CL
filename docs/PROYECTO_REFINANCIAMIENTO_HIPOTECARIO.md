@@ -578,7 +578,7 @@ class CentralBankChileClient:
 | **Hito 7 (S7)** | ✅ **Completado** | **Informe Ejecutivo y Dictamen en PDF** | Motor ReportLab (`ExecutiveReportGenerator`), gráficos vectoriales nativos de Payback/Break-Even, endpoint `POST /api/v1/reports/pdf` y botones de descarga directa en Streamlit. |
 | **Hito 8 (S8)** | ✅ **Completado** | **Módulo Financiero y Normativo Avanzado** | Simulador de abonos extraordinarios (prepagos parciales), modelado de riesgo de tasa mixta vs. fija, reglas de asegurabilidad/desgravamen por edad y sistema de amortización alemán. |
 | **Hito 9 (S9)** | ✅ **Completado** | **Ingesta en Vivo con Web Scraping Headless** | Scrapers automatizados con `playwright` sobre cotizadores bancarios abiertos de Chile (BancoEstado, Santander, BCI), script programable `sync_live_market.py` y sincronización DuckDB. |
-| **Hito 10 (S10)** | ⏳ *Planificado* | **UX Comercial Avanzada & Persistencia** | Comparador Head-to-Head entre dos entidades, modal de confirmación de extracción documental y persistencia de simulaciones guardadas por usuario. |
+| **Hito 10 (S10)** | ✅ **Completado** | **UX Comercial Avanzada & Persistencia** | Comparador Head-to-Head entre dos entidades, modal de confirmación de extracción documental y persistencia de simulaciones guardadas por usuario en DuckDB. |
 
 ---
 
@@ -656,8 +656,20 @@ docker compose down
   6. Integración en Streamlit con switch para priorizar ofertas en vivo y botón de sincronización directa.
 
 
-### 🎨 Hito 10: UX Comercial Avanzada y Persistencia de Sesiones
+### 🎨 Hito 10: UX Comercial Avanzada y Persistencia de Sesiones (Completado)
 - **Objetivo de Producto:** Optimizar la experiencia de usuario y convertir el dashboard en una herramienta de productividad recurrente:
-  1. **Comparador Lado a Lado (Head-to-Head):** Selector de dos bancos específicos para comparar simultáneamente dividendo, CAE, seguros, VPN y tabla cuota a cuota.
-  2. **Modal Interactivo de Validación Documental:** Pre-visualización de las variables extraídas de la cartola PDF con posibilidad de ajuste manual antes de recalcular.
-  3. **Persistencia de Simulaciones:** Capacidad de guardar escenarios de simulación y compartirlos vía URL parametrizada (`?balance=3200&rate=5.2&months=180`).
+  1. **Comparador Lado a Lado (Head-to-Head):**
+     - Selector de dos bancos u ofertas específicas para comparar simultáneamente dividendo mensual, ahorro en UF y CLP, costo total, tasa anual, VPN y payback descontado.
+     - Dictamen cuantitativo de dominancia patrimonial con determinación del banco ganador o declaración de empate técnico.
+     - Gráficos interactivos Plotly: barras agrupadas (`create_head_to_head_comparison_chart`) y curvas de amortización de saldo de capital (`create_head_to_head_trajectory_chart`).
+     - Endpoint REST: `POST /api/v1/compare/head-to-head`.
+  2. **Modal Interactivo de Validación Documental:**
+     - Al cargar una cartola hipotecaria en PDF mediante drag & drop, se despliega automáticamente un diálogo interactivo (`@st.dialog`) para previsualizar los parámetros detectados.
+     - Permite al usuario ajustar o corregir cualquier variable (banco acreedor, saldo insoluto, tasa anual, meses restantes, dividendos y seguros) antes de aplicarlos al motor del simulador.
+  3. **Persistencia de Simulaciones en DuckDB:**
+     - Tabla `saved_simulations` en DuckDB con auditoría de escenarios guardados (título, titular, saldo, tasa, banco actual, banco objetivo, VPN, ahorro mensual, payback y metadatos JSON).
+     - Endpoints REST: `POST /api/v1/simulations/save`, `GET /api/v1/simulations`, `GET /api/v1/simulations/{sim_id}` y `DELETE /api/v1/simulations/{sim_id}`.
+     - Pestaña dedicada en Streamlit (*Simulaciones Guardadas*) con botones para guardar, recargar escenarios al simulador con un clic y eliminar registros.
+  4. **Compartir vía URL Parametrizada:**
+     - Generación de enlaces con parámetros pre-poblados (`?balance=3200&rate=5.2&months=180&bank=Santander&div=23.10`) o por ID de simulación persistida (`?sim_id=...`).
+     - Sincronización bidireccional automática con `st.query_params` y botón en la barra lateral para actualizar el navegador.

@@ -38,10 +38,16 @@ from src.app.schemas import (
     ScrapeSyncRequest,
     ScrapeSyncResponse,
     LiveOffersResponse,
+    HeadToHeadRequest,
+    HeadToHeadResponse,
+    HeadToHeadSideDetail,
+    SavedSimulationCreate,
+    SavedSimulationItem,
+    SavedSimulationListResponse,
 )
 from src.core.amortizer import FrenchAmortizer, GermanAmortizer, MortgageParams
 from src.core.switching_costs import SwitchingCostCalculator
-from src.core.metrics import RefinanceAnalyzer
+from src.core.metrics import RefinanceAnalyzer, HeadToHeadComparator
 from src.core.advanced_financial import (
     PrepaymentSimulator,
     MixedRateRiskAnalyzer,
@@ -129,6 +135,9 @@ def root():
             "extract_statement": "/api/v1/extract-statement",
             "extract_statement_upload": "/api/v1/extract-statement/upload",
             "market_rates": "/api/v1/market-rates",
+            "head_to_head": "/api/v1/compare/head-to-head",
+            "save_simulation": "/api/v1/simulations/save",
+            "list_simulations": "/api/v1/simulations",
             "health": "/health",
         },
     }
@@ -1058,6 +1067,172 @@ def simulate_german_mortgage(request: GermanAmortizationRequest) -> GermanSimula
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error en simulación alemana: {str(e)}")
+
+
+# ============================================================================
+# Endpoints de Comparador Head-to-Head y Persistencia (Hito 10)
+# ============================================================================
+
+@app.post(
+    "/api/v1/compare/head-to-head",
+    response_model=HeadToHeadResponse,
+    summary="Comparar dos alternativas hipotecarias lado a lado (Head-to-Head)",
+    tags=["Comparador Head-to-Head"],
+)
+def compare_head_to_head(request: HeadToHeadRequest) -> HeadToHeadResponse:
+    """
+    Ejecuta una evaluación simultánea y comparativa directa entre dos ofertas bancarias (Banco A vs. Banco B)
+    frente a las condiciones del crédito actual, contrastando dividendo, ahorro, VPN y dictamen de conveniencia.
+    """
+    try:
+        current_rate_dec = request.current_annual_rate_pct / 100.0
+        disc_rate_dec = request.annual_discount_rate_pct / 100.0
+
+        params_curr = MortgageParams(
+            principal=request.balance_uf,
+            annual_rate=current_rate_dec,
+            months_remaining=request.current_months_remaining,
+            fire_insurance_monthly_uf=request.current_fire_insurance_uf,
+            life_insurance_rate_monthly=0.00028,
+        )
+        sched_curr = FrenchAmortizer.generate_schedule(params_curr)
+
+        costs = SwitchingCostCalculator.calculate_total_costs(
+            balance_uf=request.balance_uf,
+            current_annual_rate=current_rate_dec,
+            additional_cash_uf=request.additional_cash_uf,
+        )
+
+        principal_new = (
+            request.balance_uf + (costs.total_cost_uf if request.finance_costs else 0.0) + request.additional_cash_uf
+        )
+
+        sched_a = FrenchAmortizer.generate_schedule(MortgageParams(
+            principal=principal_new,
+            annual_rate=request.bank_a.annual_rate_pct / 100.0,
+            months_remaining=request.bank_a.term_years * 12,
+            fire_insurance_monthly_uf=request.bank_a.fire_insurance_monthly_uf,
+            life_insurance_rate_monthly=request.bank_a.life_insurance_rate_monthly,
+        ))
+
+        sched_b = FrenchAmortizer.generate_schedule(MortgageParams(
+            principal=principal_new,
+            annual_rate=request.bank_b.annual_rate_pct / 100.0,
+            months_remaining=request.bank_b.term_years * 12,
+            fire_insurance_monthly_uf=request.bank_b.fire_insurance_monthly_uf,
+            life_insurance_rate_monthly=request.bank_b.life_insurance_rate_monthly,
+        ))
+
+        result = HeadToHeadComparator.compare(
+            current_schedule=sched_curr,
+            current_balance_uf=request.balance_uf,
+            current_annual_rate_pct=request.current_annual_rate_pct,
+            current_months=request.current_months_remaining,
+            bank_a_name=request.bank_a.bank_name,
+            bank_a_schedule=sched_a,
+            bank_a_rate_pct=request.bank_a.annual_rate_pct,
+            bank_a_term_years=request.bank_a.term_years,
+            bank_a_upfront_costs_uf=costs.total_cost_uf,
+            bank_b_name=request.bank_b.bank_name,
+            bank_b_schedule=sched_b,
+            bank_b_rate_pct=request.bank_b.annual_rate_pct,
+            bank_b_term_years=request.bank_b.term_years,
+            bank_b_upfront_costs_uf=costs.total_cost_uf,
+            financed_costs=request.finance_costs,
+            annual_discount_rate=disc_rate_dec,
+        )
+
+        return HeadToHeadResponse(
+            current_balance_uf=result.current_balance_uf,
+            current_dividend_uf=result.current_dividend_uf,
+            current_rate_pct=result.current_rate_pct,
+            current_months=result.current_months,
+            bank_a=HeadToHeadSideDetail(**result.bank_a.to_dict()),
+            bank_b=HeadToHeadSideDetail(**result.bank_b.to_dict()),
+            npv_diff_uf=result.npv_diff_uf,
+            monthly_dividend_diff_uf=result.monthly_dividend_diff_uf,
+            total_cost_diff_uf=result.total_cost_diff_uf,
+            winner_bank=result.winner_bank,
+            verdict_rationale=result.verdict_rationale,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error en comparación Head-to-Head: {str(e)}")
+
+
+@app.post(
+    "/api/v1/simulations/save",
+    summary="Guardar escenario de simulación en DuckDB",
+    tags=["Persistencia de Sesiones"],
+)
+def save_simulation_scenario(
+    payload: SavedSimulationCreate,
+    market_service: MarketDataService = Depends(get_market_service),
+):
+    """Persiste los parámetros y resultados de una simulación para consulta recurrente o auditoría."""
+    try:
+        sim_id = market_service.save_simulation(payload.model_dump())
+        return {
+            "status": "SUCCESS",
+            "message": "Simulación guardada exitosamente.",
+            "id": sim_id,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error al guardar simulación: {str(e)}")
+
+
+@app.get(
+    "/api/v1/simulations",
+    response_model=SavedSimulationListResponse,
+    summary="Listar simulaciones guardadas",
+    tags=["Persistencia de Sesiones"],
+)
+def list_saved_simulations(
+    limit: int = 50,
+    market_service: MarketDataService = Depends(get_market_service),
+) -> SavedSimulationListResponse:
+    """Recupera el historial de simulaciones guardadas por usuarios en DuckDB."""
+    try:
+        sims = market_service.get_saved_simulations(limit=limit)
+        items = [SavedSimulationItem(**s) for s in sims]
+        return SavedSimulationListResponse(count=len(items), simulations=items)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error al listar simulaciones: {str(e)}")
+
+
+@app.get(
+    "/api/v1/simulations/{sim_id}",
+    response_model=SavedSimulationItem,
+    summary="Obtener detalle de una simulación guardada",
+    tags=["Persistencia de Sesiones"],
+)
+def get_saved_simulation_detail(
+    sim_id: str,
+    market_service: MarketDataService = Depends(get_market_service),
+) -> SavedSimulationItem:
+    """Obtiene los parámetros y resultados de una simulación guardada por su ID."""
+    sim = market_service.get_saved_simulation_by_id(sim_id)
+    if not sim:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No se encontró la simulación con id '{sim_id}'")
+    return SavedSimulationItem(**sim)
+
+
+@app.delete(
+    "/api/v1/simulations/{sim_id}",
+    summary="Eliminar una simulación guardada",
+    tags=["Persistencia de Sesiones"],
+)
+def delete_saved_simulation_endpoint(
+    sim_id: str,
+    market_service: MarketDataService = Depends(get_market_service),
+):
+    """Elimina permanentemente una simulación guardada en DuckDB."""
+    sim = market_service.get_saved_simulation_by_id(sim_id)
+    if not sim:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No se encontró la simulación con id '{sim_id}'")
+    market_service.delete_saved_simulation(sim_id)
+    return {"status": "SUCCESS", "message": f"Simulación '{sim_id}' eliminada exitosamente."}
 
 
 # ============================================================================

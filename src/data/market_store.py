@@ -3,7 +3,10 @@
 from pathlib import Path
 from datetime import datetime, date
 from typing import List, Dict, Any, Optional
+import json
+import uuid
 import duckdb
+import pandas as pd
 
 
 class MarketDataStore:
@@ -64,6 +67,30 @@ class MarketDataStore:
                 life_insurance_rate_monthly DOUBLE,
                 source VARCHAR,
                 updated_at TIMESTAMP
+            );
+        """)
+
+        # Tabla de simulaciones guardadas por el usuario (Hito 10)
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS saved_simulations (
+                id VARCHAR PRIMARY KEY,
+                title VARCHAR,
+                client_name VARCHAR,
+                current_bank VARCHAR,
+                balance_uf DOUBLE,
+                annual_rate_pct DOUBLE,
+                months_remaining INTEGER,
+                current_dividend_uf DOUBLE,
+                fire_insurance_uf DOUBLE,
+                target_bank VARCHAR,
+                target_rate_pct DOUBLE,
+                target_term_years INTEGER,
+                npv_uf DOUBLE,
+                monthly_savings_uf DOUBLE,
+                payback_months INTEGER,
+                recommendation_flag VARCHAR,
+                created_at TIMESTAMP,
+                metadata_json VARCHAR
             );
         """)
 
@@ -355,6 +382,157 @@ class MarketDataStore:
             },
         ]
         self.save_bank_offers(bank_seeds)
+
+    def save_simulation(self, sim: Dict[str, Any]) -> str:
+        """Guarda o actualiza un escenario de simulación en DuckDB (Hito 10)."""
+        sim_id = sim.get("id") or f"sim-{uuid.uuid4().hex[:10]}"
+        created_at = sim.get("created_at") or datetime.now()
+        if isinstance(created_at, str):
+            created_at = datetime.fromisoformat(created_at)
+
+        meta = sim.get("metadata_json") or {}
+        if isinstance(meta, dict):
+            meta = json.dumps(meta, ensure_ascii=False)
+
+        self.conn.execute("""
+            INSERT INTO saved_simulations (
+                id, title, client_name, current_bank, balance_uf,
+                annual_rate_pct, months_remaining, current_dividend_uf,
+                fire_insurance_uf, target_bank, target_rate_pct,
+                target_term_years, npv_uf, monthly_savings_uf,
+                payback_months, recommendation_flag, created_at, metadata_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (id) DO UPDATE SET
+                title = EXCLUDED.title,
+                client_name = EXCLUDED.client_name,
+                current_bank = EXCLUDED.current_bank,
+                balance_uf = EXCLUDED.balance_uf,
+                annual_rate_pct = EXCLUDED.annual_rate_pct,
+                months_remaining = EXCLUDED.months_remaining,
+                current_dividend_uf = EXCLUDED.current_dividend_uf,
+                fire_insurance_uf = EXCLUDED.fire_insurance_uf,
+                target_bank = EXCLUDED.target_bank,
+                target_rate_pct = EXCLUDED.target_rate_pct,
+                target_term_years = EXCLUDED.target_term_years,
+                npv_uf = EXCLUDED.npv_uf,
+                monthly_savings_uf = EXCLUDED.monthly_savings_uf,
+                payback_months = EXCLUDED.payback_months,
+                recommendation_flag = EXCLUDED.recommendation_flag,
+                metadata_json = EXCLUDED.metadata_json;
+        """, [
+            sim_id,
+            sim.get("title", f"Simulación {sim.get('target_bank', 'Hipotecario')}"),
+            sim.get("client_name", "Titular del Crédito"),
+            sim.get("current_bank", "Banco Actual"),
+            float(sim.get("balance_uf", 0.0)),
+            float(sim.get("annual_rate_pct", 0.0)),
+            int(sim.get("months_remaining", 0)),
+            float(sim.get("current_dividend_uf", 0.0)),
+            float(sim.get("fire_insurance_uf", 0.0)),
+            sim.get("target_bank", "Banco Destino"),
+            float(sim.get("target_rate_pct", 0.0)),
+            int(sim.get("target_term_years", 0)),
+            float(sim.get("npv_uf", 0.0)),
+            float(sim.get("monthly_savings_uf", 0.0)),
+            sim.get("payback_months"),
+            sim.get("recommendation_flag", "RECOMENDADO"),
+            created_at,
+            meta,
+        ])
+        return sim_id
+
+    def get_saved_simulations(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Lista las simulaciones guardadas ordenadas por fecha de creación descendente."""
+        df = self.conn.execute("""
+            SELECT id, title, client_name, current_bank, balance_uf,
+                   annual_rate_pct, months_remaining, current_dividend_uf,
+                   fire_insurance_uf, target_bank, target_rate_pct,
+                   target_term_years, npv_uf, monthly_savings_uf,
+                   payback_months, recommendation_flag, created_at, metadata_json
+            FROM saved_simulations
+            ORDER BY created_at DESC
+            LIMIT ?;
+        """, [limit]).fetchdf()
+
+        results = []
+        for _, row in df.iterrows():
+            meta = {}
+            if row["metadata_json"]:
+                try:
+                    meta = json.loads(row["metadata_json"])
+                except Exception:
+                    pass
+            results.append({
+                "id": row["id"],
+                "title": row["title"],
+                "client_name": row["client_name"],
+                "current_bank": row["current_bank"],
+                "balance_uf": float(row["balance_uf"]),
+                "annual_rate_pct": float(row["annual_rate_pct"]),
+                "months_remaining": int(row["months_remaining"]),
+                "current_dividend_uf": float(row["current_dividend_uf"]),
+                "fire_insurance_uf": float(row["fire_insurance_uf"]),
+                "target_bank": row["target_bank"],
+                "target_rate_pct": float(row["target_rate_pct"]),
+                "target_term_years": int(row["target_term_years"]),
+                "npv_uf": float(row["npv_uf"]),
+                "monthly_savings_uf": float(row["monthly_savings_uf"]),
+                "payback_months": int(row["payback_months"]) if pd.notnull(row["payback_months"]) else None,
+                "recommendation_flag": row["recommendation_flag"],
+                "created_at": str(row["created_at"]),
+                "metadata_json": meta,
+            })
+        return results
+
+    def get_saved_simulation_by_id(self, sim_id: str) -> Optional[Dict[str, Any]]:
+        """Obtiene una simulación guardada por su identificador único."""
+        df = self.conn.execute("""
+            SELECT id, title, client_name, current_bank, balance_uf,
+                   annual_rate_pct, months_remaining, current_dividend_uf,
+                   fire_insurance_uf, target_bank, target_rate_pct,
+                   target_term_years, npv_uf, monthly_savings_uf,
+                   payback_months, recommendation_flag, created_at, metadata_json
+            FROM saved_simulations
+            WHERE id = ?;
+        """, [sim_id]).fetchdf()
+
+        if df.empty:
+            return None
+        row = df.iloc[0]
+        meta = {}
+        if row["metadata_json"]:
+            try:
+                meta = json.loads(row["metadata_json"])
+            except Exception:
+                pass
+        return {
+            "id": row["id"],
+            "title": row["title"],
+            "client_name": row["client_name"],
+            "current_bank": row["current_bank"],
+            "balance_uf": float(row["balance_uf"]),
+            "annual_rate_pct": float(row["annual_rate_pct"]),
+            "months_remaining": int(row["months_remaining"]),
+            "current_dividend_uf": float(row["current_dividend_uf"]),
+            "fire_insurance_uf": float(row["fire_insurance_uf"]),
+            "target_bank": row["target_bank"],
+            "target_rate_pct": float(row["target_rate_pct"]),
+            "target_term_years": int(row["target_term_years"]),
+            "npv_uf": float(row["npv_uf"]),
+            "monthly_savings_uf": float(row["monthly_savings_uf"]),
+            "payback_months": int(row["payback_months"]) if pd.notnull(row["payback_months"]) else None,
+            "recommendation_flag": row["recommendation_flag"],
+            "created_at": str(row["created_at"]),
+            "metadata_json": meta,
+        }
+
+    def delete_saved_simulation(self, sim_id: str) -> bool:
+        """Elimina una simulación guardada por su identificador único."""
+        self.conn.execute("""
+            DELETE FROM saved_simulations WHERE id = ?;
+        """, [sim_id])
+        return True
 
     def close(self) -> None:
         """Cierra la conexión a DuckDB."""

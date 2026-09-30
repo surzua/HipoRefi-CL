@@ -428,3 +428,23 @@ class MarketDataService:
             "best_opportunity": opportunities[0] if opportunities else None,
             "all_opportunities": opportunities,
         }
+
+    # ========================================================================
+    # Métodos de Persistencia de Simulaciones (Hito 10)
+    # ========================================================================
+
+    def save_simulation(self, sim: Dict[str, Any]) -> str:
+        """Guarda o actualiza un escenario de simulación en DuckDB."""
+        return self.store.save_simulation(sim)
+
+    def get_saved_simulations(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Lista las simulaciones guardadas por usuarios."""
+        return self.store.get_saved_simulations(limit=limit)
+
+    def get_saved_simulation_by_id(self, sim_id: str) -> Optional[Dict[str, Any]]:
+        """Obtiene una simulación guardada por su ID."""
+        return self.store.get_saved_simulation_by_id(sim_id)
+
+    def delete_saved_simulation(self, sim_id: str) -> bool:
+        """Elimina una simulación guardada."""
+        return self.store.delete_saved_simulation(sim_id)

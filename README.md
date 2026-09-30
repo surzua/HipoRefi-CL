@@ -154,7 +154,24 @@ ruff check .
 | **Hito 7** | ✅ Completado | Generador de Informe Ejecutivo y Dictamen de Portabilidad en PDF (ReportLab, gráficos vectoriales nativos y API). |
 | **Hito 8** | ✅ Completado | Módulo Financiero Avanzado (Abonos extraordinarios, tasa mixta vs fija, desgravamen por edad, amortización alemana). |
 | **Hito 9** | ✅ Completado | Ingesta en Vivo con Web Scraping Headless (Playwright sobre cotizadores de BancoEstado, Santander y BCI). |
-| **Hito 10** | ⏳ Planificado | UX Comercial Avanzada (Comparador Head-to-Head y persistencia de simulaciones). |
+| **Hito 10** | ✅ Completado | UX Comercial Avanzada (Comparador Head-to-Head, persistencia DuckDB, modal de validación y URL sharing). |
+
+---
+
+## 🥊 Comparador Head-to-Head y Persistencia (Hito 10)
+
+HipoRefi-CL incorpora herramientas avanzadas de productividad comercial:
+- **Comparador Lado a Lado Head-to-Head:** Enfrenta directamente 2 instituciones bancarias o contraofertas específicas (dividendo mensual, VPN generado, payback, interés total acumulado y dictamen cuantitativo de dominancia patrimonial).
+- **Modal Interactivo de Validación Documental:** Al subir una cartola PDF, despliega un diálogo de confirmación interactivo que permite previsualizar y ajustar manualmente las variables antes de recalcular.
+- **Persistencia de Simulaciones en DuckDB:** Guarda escenarios de evaluación para auditoría técnica, negociación bancaria o seguimiento a lo largo del tiempo.
+- **Compartir vía URL Parametrizada:** Generación de enlaces con parámetros pre-poblados (`?balance=3200&rate=5.2&months=180&bank=Santander`) o ID de simulación (`?sim_id=...`).
+
+Endpoints disponibles en la API:
+- `POST /api/v1/compare/head-to-head`: Comparación cuantitativa directa entre Banco A y Banco B.
+- `POST /api/v1/simulations/save`: Guarda una simulación en la tabla `saved_simulations` de DuckDB.
+- `GET /api/v1/simulations`: Lista el historial de simulaciones guardadas.
+- `GET /api/v1/simulations/{sim_id}`: Consulta el detalle completo de un escenario persistido.
+- `DELETE /api/v1/simulations/{sim_id}`: Elimina una simulación guardada.
 
 ---
 

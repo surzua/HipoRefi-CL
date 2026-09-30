@@ -17,7 +17,7 @@ if str(ROOT_DIR) not in sys.path:
 
 from src.core.amortizer import FrenchAmortizer, GermanAmortizer, MortgageParams
 from src.core.switching_costs import SwitchingCostCalculator
-from src.core.metrics import RefinanceAnalyzer
+from src.core.metrics import RefinanceAnalyzer, HeadToHeadComparator
 from src.core.advanced_financial import (
     PrepaymentSimulator,
     MixedRateRiskAnalyzer,
@@ -36,6 +36,8 @@ from src.app.charts import (
     create_mixed_rate_stress_chart,
     create_french_vs_german_chart,
     create_actuarial_insurability_gauge,
+    create_head_to_head_comparison_chart,
+    create_head_to_head_trajectory_chart,
 )
 
 
@@ -118,6 +120,73 @@ if "detected_bank" not in st.session_state:
 if "prefer_live_scraped" not in st.session_state:
     st.session_state["prefer_live_scraped"] = False
 
+# Sincronización con Query Params de la URL (Hito 10)
+qp = st.query_params
+if "sim_id" in qp:
+    loaded_sim = market_service.get_saved_simulation_by_id(qp["sim_id"])
+    if loaded_sim:
+        st.session_state["balance_uf"] = loaded_sim["balance_uf"]
+        st.session_state["annual_rate_pct"] = loaded_sim["annual_rate_pct"]
+        st.session_state["months_remaining"] = loaded_sim["months_remaining"]
+        st.session_state["current_dividend_uf"] = loaded_sim["current_dividend_uf"]
+        st.session_state["fire_insurance_uf"] = loaded_sim["fire_insurance_uf"]
+        st.session_state["detected_bank"] = loaded_sim["current_bank"]
+if "balance" in qp:
+    try:
+        st.session_state["balance_uf"] = float(qp["balance"])
+    except ValueError:
+        pass
+if "rate" in qp:
+    try:
+        st.session_state["annual_rate_pct"] = float(qp["rate"])
+    except ValueError:
+        pass
+if "months" in qp:
+    try:
+        st.session_state["months_remaining"] = int(qp["months"])
+    except ValueError:
+        pass
+if "bank" in qp:
+    st.session_state["detected_bank"] = str(qp["bank"])
+if "div" in qp:
+    try:
+        st.session_state["current_dividend_uf"] = float(qp["div"])
+    except ValueError:
+        pass
+
+
+@st.dialog("📋 Confirmación y Validación de Cartola Bancaria")
+def modal_validation_dialog(extracted_data):
+    st.markdown("Revisa los parámetros detectados en el documento. Puedes modificarlos antes de aplicarlos:")
+    col_d1, col_d2 = st.columns(2)
+    with col_d1:
+        edit_bank = st.text_input("Banco Acreedor", value=extracted_data.bank_name)
+        edit_balance = st.number_input("Saldo Insoluto (UF)", value=float(extracted_data.current_balance_uf), step=50.0)
+        edit_rate = st.number_input("Tasa Anual (%)", value=float(extracted_data.annual_interest_rate_pct), step=0.05, format="%.2f")
+    with col_d2:
+        edit_months = st.number_input("Plazo Restante (Meses)", value=int(extracted_data.remaining_installments), step=6)
+        edit_div = st.number_input("Dividendo Mensual (UF)", value=float(extracted_data.current_total_dividend_uf), step=0.5)
+        edit_fire = st.number_input("Seguro Incendio y Sismo (UF)", value=float(extracted_data.fire_insurance_uf or 0.70), step=0.05)
+
+    col_ok, col_cancel = st.columns(2)
+    with col_ok:
+        if st.button("✅ Confirmar y Aplicar al Simulador", type="primary"):
+            st.session_state["balance_uf"] = edit_balance
+            st.session_state["annual_rate_pct"] = edit_rate
+            st.session_state["months_remaining"] = edit_months
+            st.session_state["current_dividend_uf"] = edit_div
+            st.session_state["fire_insurance_uf"] = edit_fire
+            st.session_state["detected_bank"] = edit_bank
+            if extracted_data.operation_number:
+                st.session_state["operation_number"] = extracted_data.operation_number
+            st.session_state["pending_extraction"] = None
+            st.session_state["cartola_validated"] = True
+            st.rerun()
+    with col_cancel:
+        if st.button("❌ Descartar"):
+            st.session_state["pending_extraction"] = None
+            st.rerun()
+
 
 # ============================================================================
 # Encabezado Principal e Indicadores Macroeconómicos
@@ -180,24 +249,23 @@ with st.sidebar:
     )
 
     if uploaded_pdf is not None:
-        try:
-            pdf_bytes = uploaded_pdf.read()
-            extracted = extractor.extract_from_pdf(io.BytesIO(pdf_bytes))
+        file_sig = f"{uploaded_pdf.name}_{uploaded_pdf.size}"
+        if st.session_state.get("last_uploaded_pdf_sig") != file_sig:
+            try:
+                pdf_bytes = uploaded_pdf.read()
+                extracted = extractor.extract_from_pdf(io.BytesIO(pdf_bytes))
+                st.session_state["pending_extraction"] = extracted
+                st.session_state["last_uploaded_pdf_sig"] = file_sig
+            except Exception as e:
+                st.error(f"No fue posible procesar el PDF: {e}")
 
-            st.session_state["balance_uf"] = extracted.current_balance_uf
-            st.session_state["annual_rate_pct"] = extracted.annual_interest_rate_pct
-            st.session_state["months_remaining"] = extracted.remaining_installments
-            st.session_state["current_dividend_uf"] = extracted.current_total_dividend_uf
-            if extracted.fire_insurance_uf:
-                st.session_state["fire_insurance_uf"] = extracted.fire_insurance_uf
-            st.session_state["detected_bank"] = extracted.bank_name
-            if extracted.operation_number:
-                st.session_state["operation_number"] = extracted.operation_number
+    if st.session_state.get("pending_extraction"):
+        modal_validation_dialog(st.session_state["pending_extraction"])
 
-            st.success(f"✓ Extraído con éxito: {extracted.bank_name}")
-            st.caption(f"Operación: {extracted.operation_number or 'N/A'}")
-        except Exception as e:
-            st.error(f"No fue posible procesar el PDF: {e}")
+    if st.session_state.get("cartola_validated"):
+        st.success(f"✓ Cartola confirmada: {st.session_state.get('detected_bank', '')}")
+        if st.session_state.get("operation_number"):
+            st.caption(f"Operación: {st.session_state.get('operation_number')}")
 
     st.header("⚙️ Crédito Actual")
 
@@ -278,6 +346,18 @@ with st.sidebar:
         help="Costo de oportunidad del capital en términos reales (por encima de la UF).",
     )
 
+    st.header("🔗 Compartir Escenario")
+    st.caption("Genera una URL parametrizada para compartir o recuperar tu simulación.")
+    share_qs = f"?balance={balance_uf:.1f}&rate={annual_rate_pct:.2f}&months={months_remaining}&bank={st.session_state.get('detected_bank', 'Banco')}&div={current_dividend_uf:.2f}"
+    if st.button("🔗 Actualizar URL en Navegador"):
+        st.query_params["balance"] = str(round(balance_uf, 1))
+        st.query_params["rate"] = str(round(annual_rate_pct, 2))
+        st.query_params["months"] = str(int(months_remaining))
+        st.query_params["bank"] = str(st.session_state.get("detected_bank", "Banco"))
+        st.query_params["div"] = str(round(current_dividend_uf, 2))
+        st.success("¡URL actualizada en la barra del navegador!")
+    st.code(share_qs, language="text")
+
 
 # ============================================================================
 # Cálculos de Base del Crédito Actual y Costos Normativos
@@ -322,13 +402,15 @@ best_opp = market_eval.get("best_opportunity")
 # Pestañas Principales de la Aplicación
 # ============================================================================
 
-tab_market, tab_breakeven, tab_sim, tab_fallacy, tab_schedule, tab_advanced = st.tabs([
+tab_market, tab_h2h, tab_breakeven, tab_sim, tab_fallacy, tab_schedule, tab_advanced, tab_saved = st.tabs([
     "🏆 Comparador de Mercado",
+    "🥊 Comparador Head-to-Head",
     "📈 Punto de Equilibrio & Payback",
     "🎛️ Simulador a Medida & Sensibilidad",
     "⚠️ Detector de la 'Falacia del Dividendo'",
     "📋 Tabla de Amortización",
     "🔬 Módulo Financiero Avanzado",
+    "💾 Simulaciones Guardadas",
 ])
 
 
@@ -520,7 +602,173 @@ with tab_market:
 
 
 # ----------------------------------------------------------------------------
-# PESTAÑA 2: Punto de Equilibrio y Trayectoria
+# PESTAÑA 2: Comparador Head-to-Head (Hito 10)
+# ----------------------------------------------------------------------------
+with tab_h2h:
+    st.subheader("🥊 Comparador Lado a Lado Head-to-Head: Banco A vs. Banco B")
+    st.caption("Enfrenta directamente dos ofertas bancarias específicas para evaluar dividendo, ahorro, VPN, costos y dictamen de dominancia patrimonial.")
+
+    avail_bank_names = [o["bank_quote"]["bank_name"] for o in opportunities] if opportunities else [
+        "Santander", "BancoEstado", "BCI", "Scotiabank", "Banco de Chile", "Mutuaria Security"
+    ]
+
+    col_h_left, col_h_right = st.columns(2)
+    with col_h_left:
+        st.markdown("### 🏦 Entidad A")
+        bank_a_sel = st.selectbox("Seleccionar Banco A:", avail_bank_names, index=0, key="h2h_bank_a_sel")
+
+        opp_a = next((o for o in opportunities if o["bank_quote"]["bank_name"] == bank_a_sel), None)
+        def_rate_a = opp_a["bank_quote"]["annual_rate_pct"] if opp_a else 4.25
+        def_term_a = opp_a["bank_quote"]["term_years"] if opp_a else max(5, round(months_remaining / 12))
+        def_fire_a = opp_a["bank_quote"]["fire_insurance_uf"] if opp_a else fire_insurance_uf
+
+        col_a1, col_a2 = st.columns(2)
+        with col_a1:
+            rate_a = st.number_input("Tasa Anual Banco A (%)", min_value=1.0, max_value=15.0, value=float(def_rate_a), step=0.05, format="%.2f", key="h2h_rate_a")
+        with col_a2:
+            term_a_years = st.number_input("Plazo Banco A (Años)", min_value=5, max_value=40, value=int(def_term_a), step=1, key="h2h_term_a")
+
+    with col_h_right:
+        st.markdown("### 🏛️ Entidad B")
+        idx_b = min(1, len(avail_bank_names) - 1)
+        bank_b_sel = st.selectbox("Seleccionar Banco B:", avail_bank_names, index=idx_b, key="h2h_bank_b_sel")
+
+        opp_b = next((o for o in opportunities if o["bank_quote"]["bank_name"] == bank_b_sel), None)
+        def_rate_b = opp_b["bank_quote"]["annual_rate_pct"] if opp_b else 4.50
+        def_term_b = opp_b["bank_quote"]["term_years"] if opp_b else max(5, round(months_remaining / 12))
+        def_fire_b = opp_b["bank_quote"]["fire_insurance_uf"] if opp_b else fire_insurance_uf
+
+        col_b1, col_b2 = st.columns(2)
+        with col_b1:
+            rate_b = st.number_input("Tasa Anual Banco B (%)", min_value=1.0, max_value=15.0, value=float(def_rate_b), step=0.05, format="%.2f", key="h2h_rate_b")
+        with col_b2:
+            term_b_years = st.number_input("Plazo Banco B (Años)", min_value=5, max_value=40, value=int(def_term_b), step=1, key="h2h_term_b")
+
+    p_principal_new = balance_uf + (costs.total_cost_uf if finance_costs else 0.0) + additional_cash_uf
+    sched_a = FrenchAmortizer.generate_schedule(MortgageParams(
+        principal=p_principal_new,
+        annual_rate=rate_a / 100.0,
+        months_remaining=int(term_a_years * 12),
+        fire_insurance_monthly_uf=def_fire_a,
+        life_insurance_rate_monthly=0.00028,
+    ))
+    sched_b = FrenchAmortizer.generate_schedule(MortgageParams(
+        principal=p_principal_new,
+        annual_rate=rate_b / 100.0,
+        months_remaining=int(term_b_years * 12),
+        fire_insurance_monthly_uf=def_fire_b,
+        life_insurance_rate_monthly=0.00028,
+    ))
+
+    h2h_res = HeadToHeadComparator.compare(
+        current_schedule=sched_curr,
+        current_balance_uf=balance_uf,
+        current_annual_rate_pct=annual_rate_pct,
+        current_months=months_remaining,
+        bank_a_name=bank_a_sel,
+        bank_a_schedule=sched_a,
+        bank_a_rate_pct=rate_a,
+        bank_a_term_years=int(term_a_years),
+        bank_a_upfront_costs_uf=costs.total_cost_uf,
+        bank_b_name=bank_b_sel,
+        bank_b_schedule=sched_b,
+        bank_b_rate_pct=rate_b,
+        bank_b_term_years=int(term_b_years),
+        bank_b_upfront_costs_uf=costs.total_cost_uf,
+        financed_costs=finance_costs,
+        annual_discount_rate=discount_rate_dec,
+    )
+
+    st.write("")
+    winner_color = "#2980B9" if h2h_res.winner_bank == bank_a_sel else "#27AE60" if h2h_res.winner_bank == bank_b_sel else "#7F8C8D"
+    st.markdown(f"""
+    <div style="background-color: #F8F9F9; border-radius: 10px; padding: 18px; border-left: 6px solid {winner_color}; margin-bottom: 20px;">
+        <h3 style="margin: 0; color: #1B4F72;">{h2h_res.verdict_rationale}</h3>
+        <p style="margin-top: 8px; color: #566573; font-size: 0.95rem;">
+            Diferencia de VPN: <b>{h2h_res.npv_diff_uf:+.2f} UF</b> (${h2h_res.npv_diff_uf * uf_current:+,.0f} CLP) |
+            Diferencia de Dividendo Mensual: <b>{h2h_res.monthly_dividend_diff_uf:+.2f} UF/mes</b> (${h2h_res.monthly_dividend_diff_uf * uf_current:+,.0f} CLP/mes) |
+            Diferencia en Costo Total: <b>{h2h_res.total_cost_diff_uf:+.2f} UF</b>
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col_kpi_a, col_kpi_b = st.columns(2)
+    with col_kpi_a:
+        st.markdown(f"""
+        <div style="background-color: #EBF5FB; border-radius: 8px; padding: 12px; border-left: 4px solid #2980B9;">
+            <h4 style="margin: 0; color: #1B4F72;">📊 Resultados {bank_a_sel}</h4>
+        </div>
+        """, unsafe_allow_html=True)
+        ma1, ma2, ma3 = st.columns(3)
+        ma1.metric("Dividendo Mensual", f"{h2h_res.bank_a.monthly_dividend_uf:.2f} UF", f"${h2h_res.bank_a.monthly_dividend_uf * uf_current:,.0f} CLP")
+        ma2.metric("Ahorro Mensual", f"{h2h_res.bank_a.monthly_savings_uf:+.2f} UF", f"${h2h_res.bank_a.monthly_savings_uf * uf_current:+,.0f} CLP")
+        ma3.metric("Ganancia VPN", f"{h2h_res.bank_a.npv_uf:+.1f} UF", f"${h2h_res.bank_a.npv_uf * uf_current:+,.0f} CLP")
+        ma4, ma5, ma6 = st.columns(3)
+        ma4.metric("Payback Descontado", f"{h2h_res.bank_a.payback_months} meses" if h2h_res.bank_a.payback_months else "> Plazo")
+        ma5.metric("Interés Total", f"{h2h_res.bank_a.total_interest_uf:,.1f} UF")
+        ma6.metric("Dictamen", h2h_res.bank_a.recommendation_flag)
+
+    with col_kpi_b:
+        st.markdown(f"""
+        <div style="background-color: #EAFAF1; border-radius: 8px; padding: 12px; border-left: 4px solid #27AE60;">
+            <h4 style="margin: 0; color: #196F3D;">📊 Resultados {bank_b_sel}</h4>
+        </div>
+        """, unsafe_allow_html=True)
+        mb1, mb2, mb3 = st.columns(3)
+        mb1.metric("Dividendo Mensual", f"{h2h_res.bank_b.monthly_dividend_uf:.2f} UF", f"${h2h_res.bank_b.monthly_dividend_uf * uf_current:,.0f} CLP")
+        mb2.metric("Ahorro Mensual", f"{h2h_res.bank_b.monthly_savings_uf:+.2f} UF", f"${h2h_res.bank_b.monthly_savings_uf * uf_current:+,.0f} CLP")
+        mb3.metric("Ganancia VPN", f"{h2h_res.bank_b.npv_uf:+.1f} UF", f"${h2h_res.bank_b.npv_uf * uf_current:+,.0f} CLP")
+        mb4, mb5, mb6 = st.columns(3)
+        mb4.metric("Payback Descontado", f"{h2h_res.bank_b.payback_months} meses" if h2h_res.bank_b.payback_months else "> Plazo")
+        mb5.metric("Interés Total", f"{h2h_res.bank_b.total_interest_uf:,.1f} UF")
+        mb6.metric("Dictamen", h2h_res.bank_b.recommendation_flag)
+
+    st.write("")
+    curr_metrics_dict = {
+        "monthly_dividend_uf": current_dividend_uf,
+        "annual_rate_pct": annual_rate_pct,
+    }
+    st.plotly_chart(
+        create_head_to_head_comparison_chart(
+            bank_a_name=bank_a_sel,
+            a_metrics=h2h_res.bank_a.to_dict(),
+            bank_b_name=bank_b_sel,
+            b_metrics=h2h_res.bank_b.to_dict(),
+            current_metrics=curr_metrics_dict,
+        )
+    )
+
+    st.plotly_chart(
+        create_head_to_head_trajectory_chart(
+            current_label=f"Crédito Actual ({annual_rate_pct:.2f}%)",
+            sched_curr=sched_curr,
+            bank_a_name=f"{bank_a_sel} ({rate_a:.2f}%)",
+            sched_a=sched_a,
+            bank_b_name=f"{bank_b_sel} ({rate_b:.2f}%)",
+            sched_b=sched_b,
+        )
+    )
+
+    with st.expander("📋 Tabla Comparativa Cuota a Cuota (Primeros 12 Meses)", expanded=False):
+        comp_rows = []
+        for i in range(min(12, len(sched_curr), len(sched_a), len(sched_b))):
+            r_c = sched_curr[i]
+            r_a = sched_a[i]
+            r_b = sched_b[i]
+            comp_rows.append({
+                "Mes": r_c["month"],
+                "Dividendo Actual (UF)": f"{r_c['total_dividend_uf']:.2f}",
+                f"Dividendo {bank_a_sel} (UF)": f"{r_a['total_dividend_uf']:.2f}",
+                f"Dividendo {bank_b_sel} (UF)": f"{r_b['total_dividend_uf']:.2f}",
+                f"Ahorro {bank_a_sel} (CLP)": f"${(r_c['total_dividend_uf'] - r_a['total_dividend_uf']) * uf_current:+,.0f}",
+                f"Ahorro {bank_b_sel} (CLP)": f"${(r_c['total_dividend_uf'] - r_b['total_dividend_uf']) * uf_current:+,.0f}",
+                "Ventaja A vs B (UF)": f"{r_b['total_dividend_uf'] - r_a['total_dividend_uf']:+.2f}",
+            })
+        st.dataframe(pd.DataFrame(comp_rows))
+
+
+# ----------------------------------------------------------------------------
+# PESTAÑA 3: Punto de Equilibrio y Trayectoria
 # ----------------------------------------------------------------------------
 with tab_breakeven:
     st.subheader("Trayectoria de Recuperación y Break-Even Dinámico")
@@ -1162,4 +1410,88 @@ with tab_advanced:
                 "Diferencia Dividendo (UF)": f"{g_r['total_dividend_uf'] - f_r['total_dividend_uf']:+.2f}",
             })
         st.dataframe(pd.DataFrame(comp_rows), height=250)
+
+
+# ----------------------------------------------------------------------------
+# PESTAÑA 8: Persistencia de Simulaciones (Hito 10)
+# ----------------------------------------------------------------------------
+with tab_saved:
+    st.subheader("💾 Historial de Simulaciones Guardadas en DuckDB")
+    st.caption("Guarda escenarios de evaluación para auditoría técnica, negociación bancaria o seguimiento a lo largo del tiempo.")
+
+    with st.form("form_save_current_sim"):
+        st.markdown("#### Guardar Escenario Actual:")
+        col_s1, col_s2 = st.columns(2)
+        with col_s1:
+            save_title = st.text_input("Título del Escenario", value=f"Evaluación {st.session_state.get('detected_bank', 'Actual')} vs Mercado")
+            save_client = st.text_input("Titular del Crédito", value=st.session_state.get("client_name", "Titular del Crédito"))
+        with col_s2:
+            target_b_name = best_opp["bank_quote"]["bank_name"] if best_opp else "Banco Destino"
+            target_b_rate = best_opp["bank_quote"]["annual_rate_pct"] if best_opp else 4.25
+            target_b_term = best_opp["bank_quote"]["term_years"] if best_opp else round(months_remaining / 12)
+            st.write(f"Mejor alternativa detectada: **{target_b_name} ({target_b_rate:.2f}%)**")
+            save_submit = st.form_submit_button("💾 Guardar esta Simulación en DuckDB", type="primary")
+
+        if save_submit:
+            sim_record = {
+                "title": save_title,
+                "client_name": save_client,
+                "current_bank": st.session_state.get("detected_bank", "Banco Actual"),
+                "balance_uf": balance_uf,
+                "annual_rate_pct": annual_rate_pct,
+                "months_remaining": months_remaining,
+                "current_dividend_uf": current_dividend_uf,
+                "fire_insurance_uf": fire_insurance_uf,
+                "target_bank": target_b_name,
+                "target_rate_pct": target_b_rate,
+                "target_term_years": target_b_term,
+                "npv_uf": best_decision["npv_uf"] if best_opp else 0.0,
+                "monthly_savings_uf": best_decision["monthly_savings_uf"] if best_opp else 0.0,
+                "payback_months": best_decision["payback_months"] if best_opp else None,
+                "recommendation_flag": best_decision["recommendation_flag"] if best_opp else "RECOMENDADO",
+                "metadata_json": {
+                    "operation_number": st.session_state.get("operation_number"),
+                    "uf_value": uf_current,
+                    "switching_costs_uf": costs.total_cost_uf,
+                },
+            }
+            saved_id = market_service.save_simulation(sim_record)
+            st.success(f"✓ Simulación guardada con éxito (ID: `{saved_id}`).")
+            st.rerun()
+
+    st.divider()
+
+    saved_list = market_service.get_saved_simulations(limit=20)
+    if not saved_list:
+        st.info("Aún no tienes simulaciones guardadas en la base de datos DuckDB.")
+    else:
+        st.markdown(f"#### Simulaciones Registradas ({len(saved_list)}):")
+        for sim_item in saved_list:
+            with st.container():
+                col_info, col_actions = st.columns([3, 1])
+                with col_info:
+                    st.markdown(f"""
+                    **{sim_item['title']}** — *{sim_item['client_name']}* (`{sim_item['created_at'][:19]}`)  
+                    🏛️ **Actual:** {sim_item['current_bank']} ({sim_item['annual_rate_pct']:.2f}%, {sim_item['balance_uf']:,.1f} UF)  
+                    🎯 **Destino:** {sim_item['target_bank']} ({sim_item['target_rate_pct']:.2f}%, {sim_item['target_term_years']} años)  
+                    💰 **VPN:** {sim_item['npv_uf']:+,.1f} UF | **Ahorro:** {sim_item['monthly_savings_uf']:+,.2f} UF/mes | **Payback:** {sim_item['payback_months'] or '> Plazo'} meses
+                    """)
+                with col_actions:
+                    col_act1, col_act2 = st.columns(2)
+                    with col_act1:
+                        if st.button("📂 Cargar", key=f"load_{sim_item['id']}"):
+                            st.session_state["balance_uf"] = sim_item["balance_uf"]
+                            st.session_state["annual_rate_pct"] = sim_item["annual_rate_pct"]
+                            st.session_state["months_remaining"] = sim_item["months_remaining"]
+                            st.session_state["current_dividend_uf"] = sim_item["current_dividend_uf"]
+                            st.session_state["fire_insurance_uf"] = sim_item["fire_insurance_uf"]
+                            st.session_state["detected_bank"] = sim_item["current_bank"]
+                            st.query_params["sim_id"] = sim_item["id"]
+                            st.success("¡Parámetros cargados!")
+                            st.rerun()
+                    with col_act2:
+                        if st.button("🗑️", key=f"del_{sim_item['id']}", help="Eliminar simulación"):
+                            market_service.delete_saved_simulation(sim_item["id"])
+                            st.rerun()
+                st.divider()
 

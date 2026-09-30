@@ -511,3 +511,141 @@ def create_actuarial_insurability_gauge(maturity_age: int, status: str) -> go.Fi
     )
     return fig
 
+
+# ============================================================================
+# Gráficos para Comparador Head-to-Head (Hito 10)
+# ============================================================================
+
+def create_head_to_head_comparison_chart(
+    bank_a_name: str,
+    a_metrics: Dict[str, Any],
+    bank_b_name: str,
+    b_metrics: Dict[str, Any],
+    current_metrics: Optional[Dict[str, Any]] = None,
+) -> go.Figure:
+    """
+    Genera un gráfico comparativo de barras agrupadas Head-to-Head enfrentando
+    las métricas de Dividendo Mensual, Tasa Anual, VPN y Payback entre dos entidades.
+    """
+    categories = ["Dividendo Mensual (UF)", "Tasa Anual (%)", "VPN Generado (UF)"]
+
+    vals_a = [
+        a_metrics.get("monthly_dividend_uf", 0.0),
+        a_metrics.get("annual_rate_pct", 0.0),
+        a_metrics.get("npv_uf", 0.0),
+    ]
+
+    vals_b = [
+        b_metrics.get("monthly_dividend_uf", 0.0),
+        b_metrics.get("annual_rate_pct", 0.0),
+        b_metrics.get("npv_uf", 0.0),
+    ]
+
+    fig = go.Figure()
+
+    if current_metrics:
+        vals_curr = [
+            current_metrics.get("monthly_dividend_uf", 0.0),
+            current_metrics.get("annual_rate_pct", 0.0),
+            0.0,
+        ]
+        fig.add_trace(go.Bar(
+            name="Crédito Actual",
+            x=categories,
+            y=vals_curr,
+            marker_color="#E67E22",
+            text=[f"{v:.2f}" for v in vals_curr],
+            textposition="outside",
+        ))
+
+    fig.add_trace(go.Bar(
+        name=bank_a_name,
+        x=categories,
+        y=vals_a,
+        marker_color="#2980B9",
+        text=[f"{v:.2f}" for v in vals_a],
+        textposition="outside",
+    ))
+
+    fig.add_trace(go.Bar(
+        name=bank_b_name,
+        x=categories,
+        y=vals_b,
+        marker_color="#27AE60",
+        text=[f"{v:.2f}" for v in vals_b],
+        textposition="outside",
+    ))
+
+    fig.update_layout(
+        barmode="group",
+        title=f"<b>Comparativa Directa Head-to-Head: {bank_a_name} vs. {bank_b_name}</b>",
+        yaxis_title="Valor en UF / %",
+        template="plotly_white",
+        height=400,
+        margin=dict(l=40, r=40, t=60, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    return fig
+
+
+def create_head_to_head_trajectory_chart(
+    current_label: str,
+    sched_curr: List[Dict[str, Any]],
+    bank_a_name: str,
+    sched_a: List[Dict[str, Any]],
+    bank_b_name: str,
+    sched_b: List[Dict[str, Any]],
+) -> go.Figure:
+    """
+    Gráfico de líneas interactivo con la curva de amortización de saldo insoluto
+    contrastando el crédito actual con las 2 ofertas bancarias en simultáneo.
+    """
+    fig = go.Figure()
+
+    if sched_curr:
+        months_curr = [r["month"] for r in sched_curr]
+        bal_curr = [r["start_balance_uf"] for r in sched_curr]
+        fig.add_trace(go.Scatter(
+            x=months_curr,
+            y=bal_curr,
+            mode="lines",
+            name=current_label,
+            line=dict(color="#E67E22", width=3, dash="dot"),
+            hovertemplate="Mes %{x}: <b>%{y:.1f} UF</b><extra></extra>",
+        ))
+
+    if sched_a:
+        months_a = [r["month"] for r in sched_a]
+        bal_a = [r["start_balance_uf"] for r in sched_a]
+        fig.add_trace(go.Scatter(
+            x=months_a,
+            y=bal_a,
+            mode="lines",
+            name=bank_a_name,
+            line=dict(color="#2980B9", width=3.5),
+            hovertemplate="Mes %{x}: <b>%{y:.1f} UF</b><extra></extra>",
+        ))
+
+    if sched_b:
+        months_b = [r["month"] for r in sched_b]
+        bal_b = [r["start_balance_uf"] for r in sched_b]
+        fig.add_trace(go.Scatter(
+            x=months_b,
+            y=bal_b,
+            mode="lines",
+            name=bank_b_name,
+            line=dict(color="#27AE60", width=3.5),
+            hovertemplate="Mes %{x}: <b>%{y:.1f} UF</b><extra></extra>",
+        ))
+
+    fig.update_layout(
+        title="<b>Evolución del Saldo Insoluto de Capital (UF): Crédito Actual vs. Ofertas A y B</b>",
+        xaxis_title="Mes del Crédito",
+        yaxis_title="Saldo Insoluto de Capital en UF",
+        template="plotly_white",
+        height=420,
+        margin=dict(l=40, r=40, t=60, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    return fig
+

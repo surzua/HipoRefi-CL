@@ -603,3 +603,107 @@ class LiveOffersResponse(BaseModel):
     count: int = Field(description="Total de ofertas registradas")
     offers: List[Dict[str, Any]] = Field(description="Lista de ofertas activas")
 
+
+# ============================================================================
+# Esquemas para Comparador Head-to-Head y Persistencia (Hito 10)
+# ============================================================================
+
+class HeadToHeadBankInput(BaseModel):
+    """Parámetros de oferta para una entidad en la comparación Head-to-Head."""
+    bank_name: str = Field(..., description="Nombre del banco o institución", examples=["Santander"])
+    annual_rate_pct: float = Field(..., gt=0, le=30.0, description="Tasa de interés anual (%)", examples=[4.25])
+    term_years: int = Field(..., gt=0, le=40, description="Plazo del crédito en años", examples=[20])
+    fire_insurance_monthly_uf: float = Field(default=0.70, ge=0, description="Seguro de incendio y sismo mensual (UF)")
+    life_insurance_rate_monthly: float = Field(default=0.00028, ge=0, description="Tasa mensual seguro de desgravamen")
+
+
+class HeadToHeadRequest(BaseModel):
+    """Solicitud de comparación cuantitativa directa Head-to-Head entre dos entidades."""
+    balance_uf: float = Field(..., gt=0, description="Saldo insoluto actual en UF", examples=[3200.0])
+    current_annual_rate_pct: float = Field(..., gt=0, le=30.0, description="Tasa anual pactada actual (%)", examples=[5.20])
+    current_months_remaining: int = Field(..., gt=0, le=480, description="Plazo restante actual en meses", examples=[180])
+    current_dividend_uf: float = Field(..., gt=0, description="Dividendo mensual total actual en UF", examples=[23.10])
+    current_fire_insurance_uf: float = Field(default=0.70, ge=0, description="Seguro de incendio actual (UF)")
+    bank_a: HeadToHeadBankInput = Field(..., description="Oferta o entidad financiera A")
+    bank_b: HeadToHeadBankInput = Field(..., description="Oferta o entidad financiera B")
+    annual_discount_rate_pct: float = Field(default=2.5, gt=0, le=15.0, description="Tasa de descuento real anual (%)")
+    finance_costs: bool = Field(default=False, description="Financiar gastos operacionales en nuevo crédito")
+    additional_cash_uf: float = Field(default=0.0, ge=0, description="Capital adicional de libre disposición (UF)")
+
+
+class HeadToHeadSideDetail(BaseModel):
+    """Resultado individual de una entidad en la comparación Head-to-Head."""
+    bank_name: str = Field(description="Nombre de la entidad")
+    annual_rate_pct: float = Field(description="Tasa anual (%)")
+    term_years: int = Field(description="Plazo en años")
+    monthly_dividend_uf: float = Field(description="Dividendo mensual estimado en UF")
+    monthly_savings_uf: float = Field(description="Ahorro mensual frente al crédito actual en UF")
+    total_cost_uf: float = Field(description="Costo total de dividendos durante la vida del crédito en UF")
+    total_interest_uf: float = Field(description="Total de intereses pagados en UF")
+    npv_uf: float = Field(description="Valor Presente Neto en UF")
+    payback_months: Optional[int] = Field(description="Meses para recuperar costos de cambio")
+    recommendation_flag: str = Field(description="RECOMENDADO, EVALUAR_CON_CAUTELA o NO_CONVIENE")
+
+
+class HeadToHeadResponse(BaseModel):
+    """Respuesta del análisis comparativo Head-to-Head lado a lado."""
+    current_balance_uf: float = Field(description="Saldo de capital evaluado en UF")
+    current_dividend_uf: float = Field(description="Dividendo actual de referencia en UF")
+    current_rate_pct: float = Field(description="Tasa actual de referencia (%)")
+    current_months: int = Field(description="Meses restantes actuales")
+    bank_a: HeadToHeadSideDetail = Field(description="Métricas de la Entidad A")
+    bank_b: HeadToHeadSideDetail = Field(description="Métricas de la Entidad B")
+    npv_diff_uf: float = Field(description="Diferencia de VPN (A - B) en UF. Positivo favorece a A.")
+    monthly_dividend_diff_uf: float = Field(description="Diferencia de dividendo mensual (B - A). Positivo indica que A tiene menor cuota.")
+    total_cost_diff_uf: float = Field(description="Diferencia de costo total (B - A). Positivo indica que A es más económico.")
+    winner_bank: str = Field(description="Entidad ganadora o 'EMPATE TÉCNICO'")
+    verdict_rationale: str = Field(description="Fundamento cuantitativo del dictamen")
+
+
+class SavedSimulationCreate(BaseModel):
+    """Solicitud para persistir una simulación en la base de datos DuckDB."""
+    title: str = Field(..., description="Nombre descriptivo para la simulación", examples=["Mi Refinanciamiento Santander"])
+    client_name: Optional[str] = Field(default="Titular del Crédito", description="Nombre del titular")
+    current_bank: str = Field(default="Banco Acreedor Actual", description="Banco actual")
+    balance_uf: float = Field(..., gt=0, description="Saldo insoluto en UF")
+    annual_rate_pct: float = Field(..., gt=0, description="Tasa anual (%)")
+    months_remaining: int = Field(..., gt=0, description="Plazo restante en meses")
+    current_dividend_uf: float = Field(..., gt=0, description="Dividendo mensual actual en UF")
+    fire_insurance_uf: float = Field(default=0.0, ge=0, description="Seguro de incendio mensual en UF")
+    target_bank: str = Field(..., description="Banco de la mejor oferta o propuesta")
+    target_rate_pct: float = Field(..., gt=0, description="Tasa objetivo (%)")
+    target_term_years: int = Field(..., gt=0, description="Plazo objetivo en años")
+    npv_uf: float = Field(..., description="VPN calculado en UF")
+    monthly_savings_uf: float = Field(..., description="Ahorro mensual calculado en UF")
+    payback_months: Optional[int] = Field(default=None, description="Meses de recuperación")
+    recommendation_flag: str = Field(default="RECOMENDADO", description="Dictamen")
+    metadata_json: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Metadatos o desglose adicional")
+
+
+class SavedSimulationItem(BaseModel):
+    """Registro de simulación guardada recuperada de DuckDB."""
+    id: str = Field(description="Identificador único de la simulación")
+    title: str = Field(description="Título descriptivo")
+    client_name: str = Field(description="Nombre del titular")
+    current_bank: str = Field(description="Banco actual")
+    balance_uf: float = Field(description="Saldo insoluto en UF")
+    annual_rate_pct: float = Field(description="Tasa anual del crédito actual (%)")
+    months_remaining: int = Field(description="Plazo restante en meses")
+    current_dividend_uf: float = Field(description="Dividendo mensual actual en UF")
+    fire_insurance_uf: float = Field(description="Seguro de incendio en UF")
+    target_bank: str = Field(description="Banco evaluado")
+    target_rate_pct: float = Field(description="Tasa anual ofrecida (%)")
+    target_term_years: int = Field(description="Plazo en años")
+    npv_uf: float = Field(description="VPN en UF")
+    monthly_savings_uf: float = Field(description="Ahorro mensual en UF")
+    payback_months: Optional[int] = Field(description="Meses de payback")
+    recommendation_flag: str = Field(description="Dictamen")
+    created_at: str = Field(description="Fecha y hora de creación")
+    metadata_json: Dict[str, Any] = Field(default_factory=dict, description="Detalles adicionales")
+
+
+class SavedSimulationListResponse(BaseModel):
+    """Lista de simulaciones guardadas."""
+    count: int = Field(description="Cantidad de registros encontrados")
+    simulations: List[SavedSimulationItem] = Field(description="Listado de simulaciones")
+
