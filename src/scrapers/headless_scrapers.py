@@ -202,6 +202,19 @@ class BaseHeadlessScraper:
         except ValueError:
             return None
 
+    @staticmethod
+    def _extract_text_from_html(html_content: str) -> str:
+        """Extrae el contenido textual de un HTML usando BeautifulSoup si está disponible, o fallback nativo con regex."""
+        try:
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html_content, "html.parser")
+            return soup.get_text()
+        except (ImportError, Exception):
+            clean_text = re.sub(r"<script[^>]*>.*?</script>", "", html_content, flags=re.DOTALL | re.IGNORECASE)
+            clean_text = re.sub(r"<style[^>]*>.*?</style>", "", clean_text, flags=re.DOTALL | re.IGNORECASE)
+            clean_text = re.sub(r"<[^>]+>", " ", clean_text)
+            return " ".join(clean_text.split())
+
 
 class BancoEstadoScraper(BaseHeadlessScraper):
     """Scraper para el cotizador hipotecario abierto de BancoEstado."""
@@ -265,8 +278,7 @@ class BancoEstadoScraper(BaseHeadlessScraper):
         term_years: int,
         property_value_uf: float,
     ) -> ScrapedBankQuote:
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html_content, "html.parser")
+        text = self._extract_text_from_html(html_content)
 
         div_bruto = None
         div_total = None
@@ -274,8 +286,6 @@ class BancoEstadoScraper(BaseHeadlessScraper):
         tasa_val = None
         desgravamen_val = None
         incendio_val = None
-
-        text = soup.get_text()
 
         cae_match = re.search(r"CAE\s*[:=]?\s*([0-9]+[,\.][0-9]+)\s*%", text, re.IGNORECASE)
         if cae_match:
@@ -433,9 +443,7 @@ class SantanderScraper(BaseHeadlessScraper):
         term_years: int,
         property_value_uf: float,
     ) -> ScrapedBankQuote:
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html_content, "html.parser")
-        text = soup.get_text()
+        text = self._extract_text_from_html(html_content)
 
         cae_match = re.search(r"CAE\s*[:=]?\s*([0-9]+[,\.][0-9]+)\s*%", text, re.IGNORECASE)
         cae_val = self._extract_number(cae_match.group(1)) if cae_match else None
@@ -582,9 +590,7 @@ class BCIScraper(BaseHeadlessScraper):
         term_years: int,
         property_value_uf: float,
     ) -> ScrapedBankQuote:
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html_content, "html.parser")
-        text = soup.get_text()
+        text = self._extract_text_from_html(html_content)
 
         cae_match = re.search(r"CAE\s*[:=]?\s*([0-9]+[,\.][0-9]+)\s*%", text, re.IGNORECASE)
         cae_val = self._extract_number(cae_match.group(1)) if cae_match else None

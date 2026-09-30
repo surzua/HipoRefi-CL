@@ -20,6 +20,7 @@ dependencies = [
     "plotly>=5.22.0",
     "pypdf>=4.2.0",
     "reportlab>=4.1.0",
+    "beautifulsoup4>=4.12.0",
 ]
 
 [project.optional-dependencies]

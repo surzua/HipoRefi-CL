@@ -267,3 +267,43 @@ def test_api_scrape_sync_and_live_offers():
     data_offers = resp_offers.json()
     assert data_offers["count"] >= 2
     assert any("BancoEstado" in o["bank_name"] for o in data_offers["offers"])
+
+
+def test_html_parsing_native_regex_fallback_when_bs4_unavailable(monkeypatch):
+    """Valida que _extract_text_from_html extraiga correctamente texto y números incluso sin BeautifulSoup."""
+    import builtins
+    real_import = builtins.__import__
+
+    def mock_import(name, *args, **kwargs):
+        if "bs4" in name:
+            raise ImportError("Mock No module named 'bs4'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", mock_import)
+
+    scraper = BancoEstadoScraper(timeout_ms=5000, headless=True)
+    mock_html = """
+    <html>
+        <body>
+            <div class="simulator-results">
+                <h2>Resultado Simulación Hipotecario</h2>
+                <div class="row">Tasa Anual: 4.45%</div>
+                <div class="row">Dividendo Bruto: 19.98 UF</div>
+                <div class="row">Dividendo Total: 21.23 UF</div>
+                <div class="row">CAE: 4.88%</div>
+            </div>
+        </body>
+    </html>
+    """
+    quote = scraper.scrape(
+        principal_uf=3200.0,
+        term_years=20,
+        property_value_uf=4000.0,
+        custom_html=mock_html,
+    )
+
+    assert quote.annual_rate_pct == 4.45
+    assert quote.cae_pct == 4.88
+    assert quote.monthly_total_dividend_uf == 21.23
+    assert quote.source == "PLAYWRIGHT_HEADLESS"
+
