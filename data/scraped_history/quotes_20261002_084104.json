@@ -1,0 +1,28 @@
+{
+  "timestamp": "2026-10-02T08:41:04.026517",
+  "principal_uf": 2400.0,
+  "term_years": 20,
+  "records_saved": 1,
+  "quotes": [
+    {
+      "bank_id": "bancoestado",
+      "bank_name": "BancoEstado",
+      "loan_type": "Tasa Fija (Crédito Habita Casaverso)",
+      "term_years": 20,
+      "principal_uf": 2400.0,
+      "property_value_uf": 3000.0,
+      "annual_rate_pct": 4.44,
+      "monthly_financial_dividend_uf": 14.993,
+      "monthly_total_dividend_uf": 15.932,
+      "fire_insurance_uf": 0.315,
+      "life_insurance_uf": 0.624,
+      "cae_pct": 4.91,
+      "source": "HEADLESS_FALLBACK",
+      "timestamp": "2026-10-02T08:41:03.830651",
+      "raw_metadata": {
+        "institution": "Banco del Estado de Chile (Casaverso)",
+        "mode": "headless_playwright"
+      }
+    }
+  ]
+}

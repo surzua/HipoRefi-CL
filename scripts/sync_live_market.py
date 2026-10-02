@@ -70,8 +70,8 @@ def parse_args():
     parser.add_argument(
         "--timeout",
         type=int,
-        default=15000,
-        help="Timeout en milisegundos por simulación (default: 15000 ms)",
+        default=35000,
+        help="Timeout en milisegundos por simulación (default: 35000 ms)",
     )
     parser.add_argument(
         "--db-path",
@@ -153,12 +153,7 @@ def main():
             bank_ids=bank_list,
             base_benchmark_rate=avg_rate,
         )
-        quotes = coordinator.scrape_all(
-            principal_uf=args.principal,
-            term_years=args.term,
-            property_value_uf=args.property_value,
-            bank_ids=bank_list,
-        )
+        quotes = sync_result.get("quote_objects") or []
         saved_count = sync_result["records_saved"]
         store.close()
 

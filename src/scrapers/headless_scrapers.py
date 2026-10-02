@@ -217,16 +217,28 @@ class BaseHeadlessScraper:
 
 
 class BancoEstadoScraper(BaseHeadlessScraper):
-    """Scraper para el cotizador hipotecario abierto de BancoEstado."""
+    """Scraper para el cotizador hipotecario oficial de BancoEstado en Casaverso."""
 
-    def __init__(self, timeout_ms: int = 15000, headless: bool = True):
+    def __init__(self, timeout_ms: int = 20000, headless: bool = True):
         super().__init__(
             bank_id="bancoestado",
             bank_name="BancoEstado",
-            default_url="https://www.bancoestado.cl/content/bancoestado-public/cl/es/home/home/productos-/creditos/credito-hipotecario/simulador-credito-hipotecario.html",
+            default_url="https://casaverso.cl/simulador?utm_source=www.bancoestado.cl&utm_medium=referral&utm_campaign=SimuladorBE&utm_id=08&utm_content=navbar&step=TipoPropiedadCondicion",
             timeout_ms=timeout_ms,
             headless=headless,
         )
+
+    def _get_uf_value(self) -> float:
+        """Obtiene la UF actual desde DuckDB o retorna valor de referencia de mercado."""
+        try:
+            from src.data.market_store import MarketDataStore
+            store = MarketDataStore()
+            uf = store.get_latest_uf()
+            if uf and uf >= 30000.0:
+                return float(uf)
+        except Exception:
+            pass
+        return 39400.0
 
     def _execute_playwright_scrape(
         self,
@@ -237,33 +249,108 @@ class BancoEstadoScraper(BaseHeadlessScraper):
         from playwright.sync_api import sync_playwright
 
         with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=self.headless,
-                args=self._get_browser_args(),
-            )
+            # Preferir channel='chrome' para evadir detección de Akamai Bot Manager
+            browser = None
+            try:
+                browser = p.chromium.launch(
+                    channel="chrome",
+                    headless=self.headless,
+                    args=self._get_browser_args(),
+                    ignore_default_args=["--enable-automation"],
+                )
+            except Exception:
+                browser = p.chromium.launch(
+                    headless=self.headless,
+                    args=self._get_browser_args(),
+                    ignore_default_args=["--enable-automation"],
+                )
+
             context = browser.new_context(
                 user_agent=self._get_user_agent(),
                 locale="es-CL",
                 timezone_id="America/Santiago",
-                viewport={"width": 1280, "height": 800},
+                viewport={"width": 1440, "height": 900},
             )
+            context.add_init_script("delete Object.getPrototypeOf(navigator).webdriver")
             page = context.new_page()
+
+            nav_timeout = max(self.timeout_ms, 35000)
             try:
-                page.goto(self.default_url, timeout=self.timeout_ms, wait_until="domcontentloaded")
+                page.goto(self.default_url, timeout=nav_timeout, wait_until="domcontentloaded")
                 page.wait_for_timeout(2000)
 
-                # Intentar interactuar con inputs si existen
-                if page.locator("input#montoPropiedad, input[name='montoPropiedad']").count() > 0:
-                    page.fill("input#montoPropiedad, input[name='montoPropiedad']", str(int(property_value_uf)))
-                if page.locator("input#montoCredito, input[name='montoCredito']").count() > 0:
-                    page.fill("input#montoCredito, input[name='montoCredito']", str(int(principal_uf)))
-                if page.locator("select#plazoAnos, select[name='plazoAnos']").count() > 0:
-                    page.select_option("select#plazoAnos, select[name='plazoAnos']", value=str(term_years))
+                # Paso 1: TipoPropiedadCondicion (Departamento + Nuevo)
+                if page.locator("#vivienda-button-departamento").count() > 0:
+                    page.click("#vivienda-button-departamento")
+                    page.wait_for_timeout(300)
+                if page.locator("#vibe-radio-0").count() > 0:
+                    page.check("#vibe-radio-0")
+                    page.wait_for_timeout(300)
+                if page.locator("#vivienda-button-continuar-paso1").count() > 0:
+                    page.click("#vivienda-button-continuar-paso1")
+                    page.wait_for_timeout(1000)
 
-                sim_btn = page.locator("button:has-text('Simular'), input[value='Simular'], .btn-simular")
-                if sim_btn.count() > 0:
-                    sim_btn.first.click()
-                    page.wait_for_timeout(3000)
+                # Paso 2: EtapaBusqueda (Inmediatamente)
+                if page.locator("#vibe-radio-2").count() > 0:
+                    page.check("#vibe-radio-2")
+                    page.wait_for_timeout(300)
+                if page.locator("#vivienda-button-continuar-paso2").count() > 0:
+                    page.click("#vivienda-button-continuar-paso2")
+                    page.wait_for_timeout(1500)
+
+                # Paso 3: Financiamiento (Propiedad y Pie en UF)
+                toggles = page.locator(".currency-input__toggle")
+                if toggles.count() > 1 and toggles.nth(1).inner_text().strip() == "$":
+                    toggles.nth(1).click()
+                    page.wait_for_timeout(400)
+
+                pie_uf = max(property_value_uf * 0.10, property_value_uf - principal_uf)
+                inputs = page.locator(".currency-input__input")
+                if inputs.count() >= 2:
+                    inputs.nth(0).click()
+                    inputs.nth(0).fill(str(int(property_value_uf)))
+                    inputs.nth(0).press("Tab")
+                    page.wait_for_timeout(300)
+                    inputs.nth(1).click()
+                    inputs.nth(1).fill(str(int(pie_uf)))
+                    inputs.nth(1).press("Tab")
+                    page.wait_for_timeout(500)
+
+                page.wait_for_selector("#vivienda-button-continuar-paso3:not([disabled])", timeout=8000)
+                page.click("#vivienda-button-continuar-paso3")
+                page.wait_for_timeout(1500)
+
+                # Paso 4: Subsidios (No subsidio habitacional)
+                if page.locator("#vibe-radio-7").count() > 0:
+                    page.check("#vibe-radio-7")
+                    page.wait_for_timeout(300)
+                if page.locator("#vivienda-button-continuar-paso4").count() > 0:
+                    page.click("#vivienda-button-continuar-paso4")
+                    page.wait_for_timeout(1500)
+
+                # Paso 5: Edad y Plazo
+                btn_add = page.locator('button[aria-label="Aumentar"]')
+                if btn_add.count() > 0:
+                    btn_add.click()
+                    page.wait_for_timeout(500)
+
+                # Seleccionar plazo más cercano soportado (8, 12, 15, 20, 25, 30)
+                valid_terms = [8, 12, 15, 20, 25, 30]
+                closest_term = min(valid_terms, key=lambda t: abs(t - term_years))
+                term_selector = f"#vivienda-circle-{closest_term}StepFiveTerm"
+                if page.locator(term_selector).count() > 0:
+                    page.click(term_selector)
+                    page.wait_for_timeout(500)
+
+                page.wait_for_selector("#vivienda-button-continuar-paso5:not([disabled])", timeout=8000)
+                page.click("#vivienda-button-continuar-paso5")
+
+                # Esperar a que la SPA de Angular navegue y cargue la vista de resultados
+                try:
+                    page.wait_for_url("**/resultado**", timeout=15000)
+                except Exception:
+                    pass
+                page.wait_for_timeout(4000)
 
                 content = page.content()
                 return self.parse_html_result(content, principal_uf, term_years, property_value_uf)
@@ -280,12 +367,56 @@ class BancoEstadoScraper(BaseHeadlessScraper):
     ) -> ScrapedBankQuote:
         text = self._extract_text_from_html(html_content)
 
-        div_bruto = None
-        div_total = None
+        # 1. Estrategia Casaverso: tarjetas con Plazo, Dividendo aproximado y Tasa UF
+        pattern_casaverso = (
+            r"Plazo\s+(\d+)\s+años.*?"
+            r"Dividendo\s+mensual\s+aproximado\s*\$?([0-9\.]+).*?"
+            r"Tasa\s+UF\s*([0-9\.,]+)\s*%"
+        )
+        matches_casaverso = re.findall(pattern_casaverso, text, re.DOTALL | re.IGNORECASE)
+
+        if matches_casaverso:
+            terms_data = {}
+            for m in matches_casaverso:
+                t_years = int(m[0])
+                d_clp = float(m[1].replace(".", ""))
+                r_pct = float(m[2].replace(",", "."))
+                terms_data[t_years] = {
+                    "div_clp": d_clp,
+                    "rate_pct": r_pct,
+                }
+
+            # Seleccionar plazo más cercano
+            chosen_term = min(terms_data.keys(), key=lambda t: abs(t - term_years))
+            chosen = terms_data[chosen_term]
+            rate_pct = chosen["rate_pct"]
+            div_clp = chosen["div_clp"]
+
+            # Conversión de dividendo CLP a UF
+            uf_val = self._get_uf_value()
+            div_total_uf = round(div_clp / uf_val, 3)
+
+            return self._build_quote(
+                principal_uf=principal_uf,
+                term_years=term_years,
+                property_value_uf=property_value_uf,
+                rate_pct=rate_pct,
+                div_total_uf=div_total_uf,
+                source="PLAYWRIGHT_HEADLESS",
+                extra_metadata={
+                    "portal": "casaverso.cl",
+                    "available_terms": terms_data,
+                    "matched_term_years": chosen_term,
+                    "monthly_dividend_clp": div_clp,
+                    "uf_reference": uf_val,
+                },
+            )
+
+        # 2. Estrategia genérica / legado (para mocks de tests o páginas tabulares)
         cae_val = None
         tasa_val = None
-        desgravamen_val = None
-        incendio_val = None
+        div_total = None
+        div_bruto = None
 
         cae_match = re.search(r"CAE\s*[:=]?\s*([0-9]+[,\.][0-9]+)\s*%", text, re.IGNORECASE)
         if cae_match:
@@ -303,18 +434,23 @@ class BancoEstadoScraper(BaseHeadlessScraper):
         if div_bruto_match:
             div_bruto = self._extract_number(div_bruto_match.group(1))
 
-        return self._build_quote(
-            principal_uf=principal_uf,
-            term_years=term_years,
-            property_value_uf=property_value_uf,
-            rate_pct=tasa_val or 4.50,
-            div_total_uf=div_total,
-            div_bruto_uf=div_bruto,
-            fire_uf=incendio_val,
-            life_uf=desgravamen_val,
-            cae_pct=cae_val,
-            source="PLAYWRIGHT_HEADLESS",
+        if tasa_val is not None or div_total is not None or div_bruto is not None:
+            return self._build_quote(
+                principal_uf=principal_uf,
+                term_years=term_years,
+                property_value_uf=property_value_uf,
+                rate_pct=tasa_val or 4.44,
+                div_total_uf=div_total,
+                div_bruto_uf=div_bruto,
+                cae_pct=cae_val,
+                source="PLAYWRIGHT_HEADLESS",
+            )
+
+        # 3. Fallback si no hubo coincidencia (página 404, bloqueo o vacía)
+        logger.warning(
+            f"No se detectaron campos de cotización válidos en {self.bank_name}. Usando fallback."
         )
+        return self.generate_fallback_quote(principal_uf, term_years, property_value_uf)
 
     def generate_fallback_quote(
         self,
@@ -326,7 +462,7 @@ class BancoEstadoScraper(BaseHeadlessScraper):
             principal_uf=principal_uf,
             term_years=term_years,
             property_value_uf=property_value_uf,
-            rate_pct=4.50,
+            rate_pct=4.44,
             source="HEADLESS_FALLBACK",
         )
 
@@ -342,6 +478,7 @@ class BancoEstadoScraper(BaseHeadlessScraper):
         life_uf: Optional[float] = None,
         cae_pct: Optional[float] = None,
         source: str = "PLAYWRIGHT_HEADLESS",
+        extra_metadata: Optional[Dict[str, Any]] = None,
     ) -> ScrapedBankQuote:
         months = term_years * 12
         rate_dec = rate_pct / 100.0
@@ -363,24 +500,34 @@ class BancoEstadoScraper(BaseHeadlessScraper):
         final_financial = div_bruto_uf or first_m["financial_dividend_uf"]
         final_total = div_total_uf or (final_financial + fire_calc + life_calc)
 
+        # Si el dividendo total extraído excede el financiero, reconciliar el componente de seguros
+        if div_total_uf and div_total_uf > final_financial:
+            insurance_diff = div_total_uf - final_financial
+            fire_calc = min(insurance_diff * 0.25, property_value_uf * 0.70 * 0.00018)
+            life_calc = insurance_diff - fire_calc
+
         annual_insurance_pct = ((fire_calc + life_calc) * 12 / principal_uf) * 100.0
-        final_cae = cae_pct or (rate_pct + annual_insurance_pct)
+        final_cae = cae_pct or round(rate_pct + annual_insurance_pct, 2)
+
+        meta = {"institution": "Banco del Estado de Chile (Casaverso)", "mode": "headless_playwright"}
+        if extra_metadata:
+            meta.update(extra_metadata)
 
         return ScrapedBankQuote(
             bank_id=self.bank_id,
             bank_name=self.bank_name,
-            loan_type="Tasa Fija (Crédito Habita)",
+            loan_type="Tasa Fija (Crédito Habita Casaverso)",
             term_years=term_years,
             principal_uf=principal_uf,
             property_value_uf=property_value_uf,
             annual_rate_pct=rate_pct,
-            monthly_financial_dividend_uf=final_financial,
-            monthly_total_dividend_uf=final_total,
-            fire_insurance_uf=fire_calc,
-            life_insurance_uf=life_calc,
-            cae_pct=final_cae,
+            monthly_financial_dividend_uf=round(final_financial, 3),
+            monthly_total_dividend_uf=round(final_total, 3),
+            fire_insurance_uf=round(fire_calc, 3),
+            life_insurance_uf=round(life_calc, 3),
+            cae_pct=round(final_cae, 2),
             source=source,
-            raw_metadata={"institution": "Banco del Estado de Chile", "mode": "headless_playwright"},
+            raw_metadata=meta,
         )
 
 
@@ -757,10 +904,38 @@ class HeadlessMarketScraperCoordinator:
         offers_to_save = [q.to_bank_offer_dict(base_benchmark_rate=base_benchmark_rate) for q in quotes]
         saved_count = store.save_bank_offers(offers_to_save)
 
+        # Persistencia de respaldo en JSON para inspección directa
+        try:
+            from pathlib import Path
+            import json
+            out_dir = Path("data")
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out_file = out_dir / "latest_scraped_quotes.json"
+            quotes_dict = [q.to_dict() for q in quotes]
+            with open(out_file, "w", encoding="utf-8") as f:
+                json.dump(quotes_dict, f, indent=2, ensure_ascii=False)
+
+            # Historial timestamped para trazabilidad y auditoría
+            history_dir = out_dir / "scraped_history"
+            history_dir.mkdir(parents=True, exist_ok=True)
+            ts_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+            history_file = history_dir / f"quotes_{ts_str}.json"
+            with open(history_file, "w", encoding="utf-8") as f:
+                json.dump({
+                    "timestamp": datetime.now().isoformat(),
+                    "principal_uf": principal_uf,
+                    "term_years": term_years,
+                    "records_saved": saved_count,
+                    "quotes": quotes_dict,
+                }, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.warning(f"No se pudo guardar archivo JSON de respaldo/historial: {e}")
+
         return {
             "status": "SUCCESS",
             "offers_scraped": len(quotes),
             "records_saved": saved_count,
             "quotes": [q.to_dict() for q in quotes],
+            "quote_objects": quotes,
             "timestamp": datetime.now().isoformat(),
         }
