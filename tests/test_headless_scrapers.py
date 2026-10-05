@@ -12,6 +12,7 @@ from src.scrapers.headless_scrapers import (
     SantanderScraper,
     BCIScraper,
     ItauScraper,
+    ConsorcioScraper,
     HeadlessMarketScraperCoordinator,
 )
 from src.data.market_store import MarketDataStore
@@ -194,19 +195,83 @@ def test_itau_scraper_live_toctoc():
     assert quote.source in ["TOCTOC_ITAU_LIVE", "HEADLESS_FALLBACK"]
 
 
+def test_consorcio_scraper_api_parsing():
+    """Valida la extracción de Consorcio a partir de la respuesta JSON del BFF."""
+    scraper = ConsorcioScraper(timeout_ms=5000, headless=True)
+
+    mock_bff_data = {
+        "cardList": [
+            {
+                "years": "20",
+                "rate": "4,85",
+                "totalDividend": "563116",
+                "totalDividendUf": "18,25",
+                "cae": "5,11",
+                "creditTotalCostUf": "4380",
+                "obligatoryInsurance": {
+                    "disecumbrance": "0,0965",
+                    "fireAndEarthquake": "0,3030",
+                },
+            }
+        ]
+    }
+
+    quote = scraper.parse_api_response(
+        data=mock_bff_data,
+        principal_uf=3200.0,
+        term_years=20,
+        property_value_uf=4000.0,
+    )
+
+    assert quote.bank_id == "consorcio"
+    assert quote.annual_rate_pct == 4.85
+    assert quote.monthly_total_dividend_uf == 18.25
+    assert quote.cae_pct == 5.11
+    assert quote.life_insurance_uf == 0.0965
+    assert quote.fire_insurance_uf == 0.303
+    assert quote.source == "CONSORCIO_API_LIVE"
+
+
+def test_consorcio_scraper_html_parsing():
+    """Valida la extracción de Consorcio a partir de HTML/DOM simulado."""
+    scraper = ConsorcioScraper(timeout_ms=5000, headless=True)
+
+    mock_html = """
+    <div class="cns-card-simulate">
+        <div class="rate-value">Tasa: 4.85%</div>
+        <div class="dividend-value">Dividendo: 18.25 UF</div>
+        <div class="cae-value">CAE: 5.11%</div>
+    </div>
+    """
+
+    quote = scraper.scrape(
+        principal_uf=3200.0,
+        term_years=20,
+        property_value_uf=4000.0,
+        custom_html=mock_html,
+    )
+
+    assert quote.bank_id == "consorcio"
+    assert quote.annual_rate_pct == 4.85
+    assert quote.monthly_total_dividend_uf == 18.25
+    assert quote.source == "CONSORCIO_HTML"
+
+
 def test_scraper_fallback_generation():
     """Valida que los fallbacks generen cotizaciones cuantitativas válidas y coherentes."""
     be = BancoEstadoScraper()
     st = SantanderScraper()
     bci = BCIScraper()
     itau = ItauScraper()
+    cs = ConsorcioScraper()
 
     q_be = be.generate_fallback_quote(3200.0, 20, 4000.0)
     q_st = st.generate_fallback_quote(3200.0, 20, 4000.0)
     q_bci = bci.generate_fallback_quote(3200.0, 20, 4000.0)
     q_itau = itau.generate_fallback_quote(3200.0, 20, 4000.0)
+    q_cs = cs.generate_fallback_quote(3200.0, 20, 4000.0)
 
-    for q in [q_be, q_st, q_bci, q_itau]:
+    for q in [q_be, q_st, q_bci, q_itau, q_cs]:
         assert q.source == "HEADLESS_FALLBACK"
         assert 3.5 <= q.annual_rate_pct <= 6.0
         assert q.monthly_total_dividend_uf > q.monthly_financial_dividend_uf
@@ -223,12 +288,12 @@ def test_coordinator_sync_to_duckdb(memory_store):
         store=memory_store,
         principal_uf=3200.0,
         term_years=20,
-        bank_ids=["bancoestado", "santander", "bci", "itau"],
+        bank_ids=["bancoestado", "santander", "bci", "itau", "consorcio"],
     )
 
     assert res["status"] == "SUCCESS"
-    assert res["offers_scraped"] == 4
-    assert res["records_saved"] == 4
+    assert res["offers_scraped"] == 5
+    assert res["records_saved"] == 5
 
     # Verificar lectura desde store
     offers = memory_store.get_active_bank_offers(term_years=20)
@@ -237,6 +302,7 @@ def test_coordinator_sync_to_duckdb(memory_store):
     assert any("Santander" in b for b in offer_banks)
     assert any("BCI" in b or "Crédito e Inversiones" in b for b in offer_banks)
     assert any("Itaú" in b for b in offer_banks)
+    assert any("Consorcio" in b for b in offer_banks)
 
 
 def test_market_service_live_scraped_priority(memory_store):

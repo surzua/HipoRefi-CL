@@ -96,6 +96,14 @@ class BankSimulatorProvider:
             "life_rate_monthly": 0.00028,
         },
         {
+            "id": "consorcio",
+            "name": "Banco Consorcio",
+            "loan_types": ["Tasa Fija", "Tasa Mixta"],
+            "spread_pct": -0.22,
+            "fire_rate_monthly": 0.00014,
+            "life_rate_monthly": 0.00028,
+        },
+        {
             "id": "mutuaria_security",
             "name": "Mutuaria Security",
             "loan_types": ["Mutuo Endosable Fijo"],
