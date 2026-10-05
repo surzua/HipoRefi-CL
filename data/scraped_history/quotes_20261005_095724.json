@@ -1,0 +1,30 @@
+{
+  "timestamp": "2026-10-05T09:57:24.960873",
+  "principal_uf": 3200.0,
+  "term_years": 20,
+  "records_saved": 1,
+  "quotes": [
+    {
+      "bank_id": "itau",
+      "bank_name": "Banco Itaú",
+      "loan_type": "Tasa Fija Itaú (Alianza TOCTOC)",
+      "term_years": 20,
+      "principal_uf": 3200.0,
+      "property_value_uf": 4000.0,
+      "annual_rate_pct": 4.9,
+      "monthly_financial_dividend_uf": 19.82,
+      "monthly_total_dividend_uf": 20.75,
+      "fire_insurance_uf": 0.65,
+      "life_insurance_uf": 0.28,
+      "cae_pct": 5.25,
+      "source": "TOCTOC_ITAU_LIVE",
+      "timestamp": "2026-10-05T09:57:24.946185",
+      "raw_metadata": {
+        "provider": "TOCTOC + Itaú Alianza Hipotecaria",
+        "endpoint": "https://www.toctoc.com/credito-hipotecario/gw-financiamiento/getCalcResults",
+        "matched_term": 20,
+        "dividend_clp": 852786
+      }
+    }
+  ]
+}

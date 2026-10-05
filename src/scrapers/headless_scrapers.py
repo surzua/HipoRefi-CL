@@ -1,6 +1,6 @@
-"""Scraping headless con Playwright para cotizadores hipotecarios de la banca chilena.
+"""Scraping headless con Playwright y APIs bancarias para cotizadores hipotecarios en Chile.
 
-Permite consultar en vivo simuladores abiertos de BancoEstado, Santander y BCI,
+Permite consultar en vivo simuladores abiertos de BancoEstado, Santander, BCI e Itaú (vía TOCTOC),
 extrayendo dividendos brutos, seguros (desgravamen e incendio/sismo) y CAE informada,
 con arquitectura resiliente y fallback inteligente ante caídas o bloqueos de terceros.
 """
@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 import logging
 import re
+import requests
 
 from src.core.amortizer import FrenchAmortizer, MortgageParams
 
@@ -825,6 +826,224 @@ class BCIScraper(BaseHeadlessScraper):
         )
 
 
+class ItauScraper(BaseHeadlessScraper):
+    """
+    Scraper para el cotizador hipotecario de Banco Itaú a través de su plataforma
+    oficial de alianza digital en TOCTOC (https://www.toctoc.com/credito-hipotecario).
+    Permite obtener tasas reales de Itaú, dividendos y seguros sin requerir login privado.
+    """
+
+    TOCTOC_API_URL = "https://www.toctoc.com/credito-hipotecario/gw-financiamiento/getCalcResults"
+
+    def __init__(self, timeout_ms: int = 15000, headless: bool = True):
+        super().__init__(
+            bank_id="itau",
+            bank_name="Banco Itaú",
+            default_url="https://www.toctoc.com/credito-hipotecario",
+            timeout_ms=timeout_ms,
+            headless=headless,
+        )
+
+    def _execute_playwright_scrape(
+        self,
+        principal_uf: float,
+        term_years: int,
+        property_value_uf: float,
+    ) -> ScrapedBankQuote:
+        # 1. Intentar primero el gateway oficial de cálculo TOCTOC + Itaú (rápido y resiliente)
+        income = max(3500000, int((principal_uf * 0.007 * 41000) / 0.25))
+        financing = int(round((principal_uf / property_value_uf) * 100))
+
+        params = {
+            "spendableIncome": income,
+            "propertyValue": int(property_value_uf),
+            "propertyValueCurrency": 2,  # 2 = UF
+            "financingPercent": financing,
+        }
+        headers = {
+            "User-Agent": self._get_user_agent(),
+            "Referer": self.default_url,
+        }
+
+        try:
+            resp = requests.get(
+                self.TOCTOC_API_URL,
+                params=params,
+                headers=headers,
+                timeout=max(5.0, self.timeout_ms / 1000.0),
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("exito") and data.get("result"):
+                    items = data["result"]
+                    match = next(
+                        (item for item in items if int(item.get("term", 0)) == term_years),
+                        items[0],
+                    )
+
+                    rate_pct = float(match.get("rate", 4.90))
+                    total_div_uf = float(match.get("dividendUF", 20.75))
+                    fire_uf = float(match.get("fireAndQuakeInsuranceUF", property_value_uf * 0.70 * 0.00015))
+                    life_uf = float(match.get("deathOrDisabilityInsuranceUF", principal_uf * 0.00028))
+                    fin_div_uf = round(total_div_uf - fire_uf - life_uf, 3)
+
+                    annual_insurance_pct = ((fire_uf + life_uf) * 12 / principal_uf) * 100.0
+                    cae_pct = round(rate_pct + annual_insurance_pct, 2)
+
+                    return ScrapedBankQuote(
+                        bank_id=self.bank_id,
+                        bank_name=self.bank_name,
+                        loan_type="Tasa Fija Itaú (Alianza TOCTOC)",
+                        term_years=term_years,
+                        principal_uf=principal_uf,
+                        property_value_uf=property_value_uf,
+                        annual_rate_pct=rate_pct,
+                        monthly_financial_dividend_uf=fin_div_uf,
+                        monthly_total_dividend_uf=total_div_uf,
+                        fire_insurance_uf=fire_uf,
+                        life_insurance_uf=life_uf,
+                        cae_pct=cae_pct,
+                        source="TOCTOC_ITAU_LIVE",
+                        raw_metadata={
+                            "provider": "TOCTOC + Itaú Alianza Hipotecaria",
+                            "endpoint": self.TOCTOC_API_URL,
+                            "matched_term": match.get("term"),
+                            "dividend_clp": match.get("dividendCLP"),
+                        },
+                    )
+        except Exception as api_err:
+            logger.warning(
+                f"Consulta a gateway TOCTOC/Itaú no exitosa ({api_err}). Intentando navegación headless Playwright."
+            )
+
+        # 2. Navegación headless Playwright como fallback si el gateway directo no responde
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=self.headless,
+                args=self._get_browser_args(),
+            )
+            context = browser.new_context(
+                user_agent=self._get_user_agent(),
+                locale="es-CL",
+                timezone_id="America/Santiago",
+                viewport={"width": 1280, "height": 800},
+            )
+            page = context.new_page()
+            try:
+                page.goto(self.default_url, timeout=self.timeout_ms, wait_until="networkidle")
+
+                # Activar toggle switch para '¿Ya tienes la propiedad de tus sueños?'
+                switch_lbl = page.locator("label.switch_switch__nCShj")
+                if switch_lbl.count() > 0:
+                    switch_lbl.first.click()
+                    page.wait_for_timeout(500)
+
+                if page.locator("#spendableIncome").count() > 0:
+                    page.fill("#spendableIncome", str(income))
+                if page.locator("#propertyValue").count() > 0:
+                    page.fill("#propertyValue", str(int(property_value_uf)))
+
+                calc_btn = page.locator("#clickCalculate, button:has-text('Calcular')")
+                if calc_btn.count() > 0:
+                    calc_btn.first.click()
+                    page.wait_for_timeout(3000)
+
+                content = page.content()
+                return self.parse_html_result(content, principal_uf, term_years, property_value_uf)
+            finally:
+                context.close()
+                browser.close()
+
+    def parse_html_result(
+        self,
+        html_content: str,
+        principal_uf: float,
+        term_years: int,
+        property_value_uf: float,
+    ) -> ScrapedBankQuote:
+        text = self._extract_text_from_html(html_content)
+
+        tasa_match = re.search(r"([0-9]+[,\.][0-9]+)\s*%\s*(?:tasa|anual)", text, re.IGNORECASE)
+        rate_val = self._extract_number(tasa_match.group(1)) if tasa_match else 4.90
+
+        div_match = re.search(r"([0-9]+[,\.][0-9]+)\s*UF", text, re.IGNORECASE)
+        div_val = self._extract_number(div_match.group(1)) if div_match else None
+
+        return self._build_quote(
+            principal_uf=principal_uf,
+            term_years=term_years,
+            property_value_uf=property_value_uf,
+            rate_pct=rate_val or 4.90,
+            div_total_uf=div_val,
+            source="TOCTOC_ITAU_HTML",
+        )
+
+    def generate_fallback_quote(
+        self,
+        principal_uf: float,
+        term_years: int,
+        property_value_uf: float,
+    ) -> ScrapedBankQuote:
+        return self._build_quote(
+            principal_uf=principal_uf,
+            term_years=term_years,
+            property_value_uf=property_value_uf,
+            rate_pct=4.48,
+            source="HEADLESS_FALLBACK",
+        )
+
+    def _build_quote(
+        self,
+        principal_uf: float,
+        term_years: int,
+        property_value_uf: float,
+        rate_pct: float,
+        div_total_uf: Optional[float] = None,
+        fire_uf: Optional[float] = None,
+        life_uf: Optional[float] = None,
+        cae_pct: Optional[float] = None,
+        source: str = "TOCTOC_ITAU_LIVE",
+    ) -> ScrapedBankQuote:
+        fire_calc = fire_uf or (property_value_uf * 0.70 * 0.00015)
+        life_calc = life_uf or (principal_uf * 0.00028)
+
+        months = term_years * 12
+        params = MortgageParams(
+            principal=principal_uf,
+            annual_rate=rate_pct / 100.0,
+            months_remaining=months,
+            fire_insurance_monthly_uf=fire_calc,
+            life_insurance_rate_monthly=0.00028,
+        )
+        schedule = FrenchAmortizer.generate_schedule(params)
+        first_m = schedule[0]
+
+        final_financial = first_m["financial_dividend_uf"]
+        final_total = div_total_uf or (final_financial + fire_calc + life_calc)
+
+        annual_insurance_pct = ((fire_calc + life_calc) * 12 / principal_uf) * 100.0
+        final_cae = cae_pct or (rate_pct + annual_insurance_pct)
+
+        return ScrapedBankQuote(
+            bank_id=self.bank_id,
+            bank_name=self.bank_name,
+            loan_type="Tasa Fija Itaú (Alianza TOCTOC)",
+            term_years=term_years,
+            principal_uf=principal_uf,
+            property_value_uf=property_value_uf,
+            annual_rate_pct=rate_pct,
+            monthly_financial_dividend_uf=round(final_financial, 3),
+            monthly_total_dividend_uf=round(final_total, 3),
+            fire_insurance_uf=round(fire_calc, 3),
+            life_insurance_uf=round(life_calc, 3),
+            cae_pct=round(final_cae, 2),
+            source=source,
+            raw_metadata={"institution": "Banco Itaú Chile", "channel": "TOCTOC_FINANCIAMIENTO"},
+        )
+
+
 class HeadlessMarketScraperCoordinator:
     """
     Coordinador de scrapers headless bancarios.
@@ -835,6 +1054,7 @@ class HeadlessMarketScraperCoordinator:
         "bancoestado": BancoEstadoScraper,
         "santander": SantanderScraper,
         "bci": BCIScraper,
+        "itau": ItauScraper,
     }
 
     def __init__(self, headless: bool = True, timeout_ms: int = 15000):

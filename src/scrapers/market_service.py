@@ -237,7 +237,7 @@ class MarketDataService:
         all_offers = self.store.get_active_bank_offers(term_years=term_years)
         return [
             o for o in all_offers
-            if "PLAYWRIGHT" in o.get("source", "").upper() or "HEADLESS" in o.get("source", "").upper()
+            if any(k in o.get("source", "").upper() for k in ["PLAYWRIGHT", "HEADLESS", "TOCTOC", "LIVE"])
         ]
 
     def sync_from_live_scrapers(

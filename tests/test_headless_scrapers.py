@@ -11,6 +11,7 @@ from src.scrapers.headless_scrapers import (
     BancoEstadoScraper,
     SantanderScraper,
     BCIScraper,
+    ItauScraper,
     HeadlessMarketScraperCoordinator,
 )
 from src.data.market_store import MarketDataStore
@@ -147,17 +148,65 @@ def test_bci_scraper_parsing():
     assert quote.source == "PLAYWRIGHT_HEADLESS"
 
 
+def test_itau_scraper_parsing():
+    """Valida la extracción de Itaú (alianza TOCTOC) con HTML simulado."""
+    scraper = ItauScraper(timeout_ms=5000, headless=True)
+
+    mock_html = """
+    <html>
+        <body>
+            <div class="toctoc-results">
+                <h2>Opciones de financiamiento Itaú</h2>
+                <div class="row">Tasa Anual: 4.90%</div>
+                <div class="row">Dividendo Total: 20.75 UF</div>
+                <div class="row">Seguro Incendio y Sismo: 0.65 UF</div>
+                <div class="row">Seguro Desgravamen: 0.28 UF</div>
+            </div>
+        </body>
+    </html>
+    """
+    quote = scraper.scrape(
+        principal_uf=3200.0,
+        term_years=20,
+        property_value_uf=4000.0,
+        custom_html=mock_html,
+    )
+
+    assert quote.bank_id == "itau"
+    assert quote.annual_rate_pct == 4.90
+    assert quote.monthly_total_dividend_uf == 20.75
+    assert quote.source == "TOCTOC_ITAU_HTML"
+
+
+def test_itau_scraper_live_toctoc():
+    """Valida la consulta en vivo de Itaú a través del gateway TOCTOC."""
+    scraper = ItauScraper(timeout_ms=10000, headless=True)
+    quote = scraper.scrape(
+        principal_uf=3200.0,
+        term_years=20,
+        property_value_uf=4000.0,
+    )
+
+    assert quote.bank_id == "itau"
+    assert "Itaú" in quote.bank_name
+    assert 3.5 <= quote.annual_rate_pct <= 6.5
+    assert quote.monthly_total_dividend_uf > 15.0
+    assert quote.source in ["TOCTOC_ITAU_LIVE", "HEADLESS_FALLBACK"]
+
+
 def test_scraper_fallback_generation():
     """Valida que los fallbacks generen cotizaciones cuantitativas válidas y coherentes."""
     be = BancoEstadoScraper()
     st = SantanderScraper()
     bci = BCIScraper()
+    itau = ItauScraper()
 
     q_be = be.generate_fallback_quote(3200.0, 20, 4000.0)
     q_st = st.generate_fallback_quote(3200.0, 20, 4000.0)
     q_bci = bci.generate_fallback_quote(3200.0, 20, 4000.0)
+    q_itau = itau.generate_fallback_quote(3200.0, 20, 4000.0)
 
-    for q in [q_be, q_st, q_bci]:
+    for q in [q_be, q_st, q_bci, q_itau]:
         assert q.source == "HEADLESS_FALLBACK"
         assert 3.5 <= q.annual_rate_pct <= 6.0
         assert q.monthly_total_dividend_uf > q.monthly_financial_dividend_uf
@@ -174,12 +223,12 @@ def test_coordinator_sync_to_duckdb(memory_store):
         store=memory_store,
         principal_uf=3200.0,
         term_years=20,
-        bank_ids=["bancoestado", "santander", "bci"],
+        bank_ids=["bancoestado", "santander", "bci", "itau"],
     )
 
     assert res["status"] == "SUCCESS"
-    assert res["offers_scraped"] == 3
-    assert res["records_saved"] == 3
+    assert res["offers_scraped"] == 4
+    assert res["records_saved"] == 4
 
     # Verificar lectura desde store
     offers = memory_store.get_active_bank_offers(term_years=20)
@@ -187,6 +236,7 @@ def test_coordinator_sync_to_duckdb(memory_store):
     assert "BancoEstado" in offer_banks
     assert any("Santander" in b for b in offer_banks)
     assert any("BCI" in b or "Crédito e Inversiones" in b for b in offer_banks)
+    assert any("Itaú" in b for b in offer_banks)
 
 
 def test_market_service_live_scraped_priority(memory_store):

@@ -1,0 +1,90 @@
+{
+  "timestamp": "2026-10-05T10:00:39.918922",
+  "principal_uf": 3200.0,
+  "term_years": 20,
+  "records_saved": 4,
+  "quotes": [
+    {
+      "bank_id": "bci",
+      "bank_name": "Banco de Crédito e Inversiones (BCI)",
+      "loan_type": "Hipotecario Tradicional BCI",
+      "term_years": 20,
+      "principal_uf": 3200.0,
+      "property_value_uf": 4000.0,
+      "annual_rate_pct": 3.35,
+      "monthly_financial_dividend_uf": 18.231,
+      "monthly_total_dividend_uf": 19.519,
+      "fire_insurance_uf": 0.392,
+      "life_insurance_uf": 0.896,
+      "cae_pct": 3.83,
+      "source": "PLAYWRIGHT_HEADLESS",
+      "timestamp": "2026-10-05T10:00:39.125395",
+      "raw_metadata": {
+        "institution": "Banco de Crédito e Inversiones",
+        "mode": "headless_playwright"
+      }
+    },
+    {
+      "bank_id": "itau",
+      "bank_name": "Banco Itaú",
+      "loan_type": "Tasa Fija Itaú (Alianza TOCTOC)",
+      "term_years": 20,
+      "principal_uf": 3200.0,
+      "property_value_uf": 4000.0,
+      "annual_rate_pct": 4.9,
+      "monthly_financial_dividend_uf": 19.82,
+      "monthly_total_dividend_uf": 20.75,
+      "fire_insurance_uf": 0.65,
+      "life_insurance_uf": 0.28,
+      "cae_pct": 5.25,
+      "source": "TOCTOC_ITAU_LIVE",
+      "timestamp": "2026-10-05T10:00:39.908683",
+      "raw_metadata": {
+        "provider": "TOCTOC + Itaú Alianza Hipotecaria",
+        "endpoint": "https://www.toctoc.com/credito-hipotecario/gw-financiamiento/getCalcResults",
+        "matched_term": 20,
+        "dividend_clp": 852786
+      }
+    },
+    {
+      "bank_id": "santander",
+      "bank_name": "Banco Santander Chile",
+      "loan_type": "Tasa Fija Hipotecario Santander",
+      "term_years": 20,
+      "principal_uf": 3200.0,
+      "property_value_uf": 4000.0,
+      "annual_rate_pct": 4.4,
+      "monthly_financial_dividend_uf": 19.924,
+      "monthly_total_dividend_uf": 21.208,
+      "fire_insurance_uf": 0.42,
+      "life_insurance_uf": 0.864,
+      "cae_pct": 4.88,
+      "source": "PLAYWRIGHT_HEADLESS",
+      "timestamp": "2026-10-05T10:00:36.045090",
+      "raw_metadata": {
+        "institution": "Banco Santander Chile",
+        "mode": "headless_playwright"
+      }
+    },
+    {
+      "bank_id": "bancoestado",
+      "bank_name": "BancoEstado",
+      "loan_type": "Tasa Fija (Crédito Habita Casaverso)",
+      "term_years": 20,
+      "principal_uf": 3200.0,
+      "property_value_uf": 4000.0,
+      "annual_rate_pct": 4.44,
+      "monthly_financial_dividend_uf": 19.99,
+      "monthly_total_dividend_uf": 21.242,
+      "fire_insurance_uf": 0.42,
+      "life_insurance_uf": 0.832,
+      "cae_pct": 4.91,
+      "source": "HEADLESS_FALLBACK",
+      "timestamp": "2026-10-05T10:00:32.486264",
+      "raw_metadata": {
+        "institution": "Banco del Estado de Chile (Casaverso)",
+        "mode": "headless_playwright"
+      }
+    }
+  ]
+}
