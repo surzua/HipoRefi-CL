@@ -14,6 +14,7 @@ from src.scrapers.headless_scrapers import (
     ItauScraper,
     ConsorcioScraper,
     BancoInternacionalScraper,
+    BancoFalabellaScraper,
     HeadlessMarketScraperCoordinator,
 )
 from src.data.market_store import MarketDataStore
@@ -342,6 +343,86 @@ def test_internacional_scraper_html_parsing():
     assert quote.source == "INTERNACIONAL_HTML"
 
 
+def test_falabella_scraper_api_parsing():
+    """Valida la extracción de Banco Falabella a partir de la respuesta JSON oficial de Apigee."""
+    scraper = BancoFalabellaScraper(timeout_ms=5000, headless=True)
+
+    mock_api_data = [
+        {
+            "simulation": {"id": "1", "date": "05-10-2026 16:13"},
+            "loan": {
+                "cae": "4.7",
+                "purpose": "COMPRA VENTA",
+                "term": "20",
+                "percentageFinanced": 80,
+                "amountFinanced": 3200.0,
+                "interestRate": {"annualInterestRate": 4.3},
+                "payment": {
+                    "monthlyPayment": [
+                        {"currency": {"id": "CLP"}, "amount": 816382, "insuranceIncluded": {"amount": 846709}},
+                        {"currency": {"id": "CLF"}, "amount": 19.8602, "insuranceIncluded": {"amount": 20.598}},
+                    ]
+                },
+            },
+            "insurance": {
+                "fire": {"costs": [{"currency": {"id": "CLF"}, "amount": 0.3364}]},
+                "mortgageProtection": {"costs": [{"currency": {"id": "CLF"}, "amount": 0.4014}]},
+            },
+            "expenses": {
+                "totalOperationalExpenses": [{"currency": {"id": "CLF"}, "amount": 58.56}],
+            },
+            "clf": {"amount": 41106.35},
+        }
+    ]
+
+    quote = scraper.parse_api_response(
+        data=mock_api_data,
+        principal_uf=3200.0,
+        term_years=20,
+        property_value_uf=4000.0,
+    )
+
+    assert quote.bank_id == "falabella"
+    assert quote.bank_name == "Banco Falabella"
+    assert quote.annual_rate_pct == 4.30
+    assert quote.monthly_financial_dividend_uf == 19.86
+    assert quote.monthly_total_dividend_uf == 20.598
+    assert quote.fire_insurance_uf == 0.3364
+    assert quote.life_insurance_uf == 0.4014
+    assert quote.cae_pct == 4.70
+    assert quote.source == "FALABELLA_API_LIVE"
+    assert quote.raw_metadata.get("operational_expenses_uf") == 58.56
+    assert quote.raw_metadata.get("clf_rate") == 41106.35
+
+
+def test_falabella_scraper_html_parsing():
+    """Valida la extracción de Banco Falabella a partir del HTML/DOM simulado."""
+    scraper = BancoFalabellaScraper(timeout_ms=5000, headless=True)
+
+    mock_html = """
+    <div class="result-container">
+        <h2>Simulación Crédito Hipotecario Banco Falabella</h2>
+        <div class="dividend-highlight">Dividendo Mensual: UF 20,60</div>
+        <div class="detail-row">Tasa Anual: 4.3%</div>
+        <div class="detail-row">CAE: 4.70%</div>
+        <div class="detail-row">Plazo: 20 años</div>
+    </div>
+    """
+
+    quote = scraper.scrape(
+        principal_uf=3200.0,
+        term_years=20,
+        property_value_uf=4000.0,
+        custom_html=mock_html,
+    )
+
+    assert quote.bank_id == "falabella"
+    assert quote.annual_rate_pct == 4.30
+    assert quote.cae_pct == 4.70
+    assert quote.monthly_financial_dividend_uf == 20.60
+    assert quote.source == "FALABELLA_HTML"
+
+
 def test_scraper_fallback_generation():
     """Valida que los fallbacks generen cotizaciones cuantitativas válidas y coherentes."""
     be = BancoEstadoScraper()
@@ -350,6 +431,7 @@ def test_scraper_fallback_generation():
     itau = ItauScraper()
     cs = ConsorcioScraper()
     bi = BancoInternacionalScraper()
+    bf = BancoFalabellaScraper()
 
     q_be = be.generate_fallback_quote(3200.0, 20, 4000.0)
     q_st = st.generate_fallback_quote(3200.0, 20, 4000.0)
@@ -357,8 +439,9 @@ def test_scraper_fallback_generation():
     q_itau = itau.generate_fallback_quote(3200.0, 20, 4000.0)
     q_cs = cs.generate_fallback_quote(3200.0, 20, 4000.0)
     q_bi = bi.generate_fallback_quote(3200.0, 20, 4000.0)
+    q_bf = bf.generate_fallback_quote(3200.0, 20, 4000.0)
 
-    for q in [q_be, q_st, q_bci, q_itau, q_cs, q_bi]:
+    for q in [q_be, q_st, q_bci, q_itau, q_cs, q_bi, q_bf]:
         assert q.source == "HEADLESS_FALLBACK"
         assert 3.5 <= q.annual_rate_pct <= 6.0
         assert q.monthly_total_dividend_uf > q.monthly_financial_dividend_uf
@@ -375,12 +458,12 @@ def test_coordinator_sync_to_duckdb(memory_store):
         store=memory_store,
         principal_uf=3200.0,
         term_years=20,
-        bank_ids=["bancoestado", "santander", "bci", "itau", "consorcio", "internacional"],
+        bank_ids=["bancoestado", "santander", "bci", "itau", "consorcio", "internacional", "falabella"],
     )
 
     assert res["status"] == "SUCCESS"
-    assert res["offers_scraped"] == 6
-    assert res["records_saved"] == 6
+    assert res["offers_scraped"] == 7
+    assert res["records_saved"] == 7
 
     # Verificar lectura desde store
     offers = memory_store.get_active_bank_offers(term_years=20)
@@ -391,6 +474,7 @@ def test_coordinator_sync_to_duckdb(memory_store):
     assert any("Itaú" in b for b in offer_banks)
     assert any("Consorcio" in b for b in offer_banks)
     assert any("Internacional" in b for b in offer_banks)
+    assert any("Falabella" in b for b in offer_banks)
 
 
 def test_market_service_live_scraped_priority(memory_store):

@@ -1634,6 +1634,520 @@ class BancoInternacionalScraper(BaseHeadlessScraper):
         )
 
 
+class BancoFalabellaScraper(BaseHeadlessScraper):
+    """
+    Scraper para el cotizador hipotecario oficial de Banco Falabella
+    (https://www.bancofalabella.cl/simulador-credito-hipotecario).
+    Soporta extracción directa vía API REST Apigee oficial (/mortgage-loan-local/v1/simulations),
+    Playwright headless interactivo (/nuevosimulador/), parseo DOM/HTML y fallback cuantitativo paramétrico.
+    """
+
+    DEFAULT_SIMULATOR_URL = "https://www.bancofalabella.cl/simulador-credito-hipotecario"
+    BASE_API_URL = "https://www.bancofalabella.cl/nuevosimulador"
+
+    def __init__(self, timeout_ms: int = 25000, headless: bool = True):
+        super().__init__(
+            bank_id="falabella",
+            bank_name="Banco Falabella",
+            default_url=self.DEFAULT_SIMULATOR_URL,
+            timeout_ms=timeout_ms,
+            headless=headless,
+        )
+
+    def _execute_direct_api_scrape(
+        self,
+        principal_uf: float,
+        term_years: int,
+        property_value_uf: float,
+    ) -> ScrapedBankQuote:
+        """Consulta directamente el API REST oficial del simulador de Banco Falabella."""
+        import requests
+
+        timeout_sec = max(10.0, self.timeout_ms / 1000.0)
+
+        # 1. Obtención de token OAuth2 client_credentials
+        url_token = f"{self.BASE_API_URL}/oauth/cc/token"
+        headers_token = {
+            "User-Agent": self._get_user_agent(),
+            "Content-Type": "application/x-www-form-urlencoded",
+            "x-params": "Content-Type,Authorization,X-api-key,X-redirect-to",
+            "environment": "apigee",
+            "x-redirect-to": "/oauth/cc/token",
+            "Referer": self.DEFAULT_SIMULATOR_URL,
+        }
+        res_token = requests.post(
+            url_token,
+            headers=headers_token,
+            data="grant_type=client_credentials",
+            timeout=timeout_sec,
+        )
+        res_token.raise_for_status()
+        token = res_token.json().get("access_token")
+        if not token:
+            raise ValueError("No se pudo obtener access_token de Banco Falabella")
+
+        # 2. Obtención de parámetros del simulador (UF del día, plazos disponibles, etc.)
+        url_params = f"{self.BASE_API_URL}/mortgage-loan-local/v1/simulations/parameters"
+        headers_params = {
+            "User-Agent": self._get_user_agent(),
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+            "environment": "gateway",
+            "X-redirect-to": "/mortgage/apigee/simulator/simulation/parameters",
+            "x-params": "Content-Type,X-redirect-to",
+            "Referer": self.DEFAULT_SIMULATOR_URL,
+        }
+        try:
+            res_params = requests.post(url_params, headers=headers_params, json={}, timeout=timeout_sec)
+            params_data = res_params.json() if res_params.status_code == 200 else {}
+        except Exception:
+            params_data = {}
+
+        # 3. Construcción del payload
+        down_payment_uf = max(0.0, property_value_uf - principal_uf)
+        down_payment_pct = (down_payment_uf / property_value_uf * 100.0) if property_value_uf > 0 else 20.0
+
+        payload = {
+            "type": "02",
+            "fogaes": "SIN_FOGAES",
+            "termsConditions": True,
+            "parameters": params_data,
+            "customer": {
+                "firstName": f"Juan:{token}",
+                "surname": "Perez",
+                "fnacimiento": "1988-06-15",
+                "document": {"documentNumber": "16234567"},
+                "salary": {"monthly": [{"amount": 2500000}]},
+                "telephone": [{"number": "912345678"}],
+                "email": [{"emailAddress": "contacto@hiporefi.cl"}],
+            },
+            "property": {
+                "type": "DEPARTAMENTO",
+                "condition": "USADA",
+                "amount": float(property_value_uf),
+                "currency": {"id": "CLF"},
+                "purchasePeriod": "",
+                "normative": {"dfl2": {"status": {"isOperative": True}}},
+            },
+            "loan": {
+                "product": {"id": "8"},
+                "purpose": "COMPRA_VENTA",
+                "interestRate": {"interestRateId": "TASA_FIJA"},
+                "realEstate": {
+                    "id": "682",
+                    "project": {"id": "0", "agreement": {"id": "0"}},
+                },
+                "downPayment": {
+                    "amount": float(round(down_payment_uf, 2)),
+                    "percentage": float(round(down_payment_pct, 2)),
+                    "currency": {"id": "CLF"},
+                },
+                "term": int(term_years),
+                "nonPaymentPeriod": {"initialPeriod": "0"},
+            },
+            "insurance": {
+                "fire": {"id": "INCENDIO"},
+                "unemployment": {"id": "SIN_SEGURO_CESANTIA"},
+                "mortgageProtection": {"id": "DESGRAVAMEN"},
+            },
+        }
+
+        # 4. Solicitud de simulación
+        url_sim = f"{self.BASE_API_URL}/mortgage-loan-local/v1/simulations"
+        headers_sim = {
+            "User-Agent": self._get_user_agent(),
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+            "X-Channel": "WEB_OMNICHANNEL",
+            "X-Commerce": "",
+            "X-redirect-to": "/mortgage-loan-local/v1/simulations",
+            "environment": "apigee",
+            "x-params": "Content-Type,Authorization,X-redirect-to,X-Channel,X-Commerce",
+            "Referer": self.DEFAULT_SIMULATOR_URL,
+        }
+        res_sim = requests.post(url_sim, headers=headers_sim, json=payload, timeout=timeout_sec)
+        res_sim.raise_for_status()
+        data = res_sim.json()
+        return self.parse_api_response(data, principal_uf, term_years, property_value_uf)
+
+    def _execute_playwright_scrape(
+        self,
+        principal_uf: float,
+        term_years: int,
+        property_value_uf: float,
+    ) -> ScrapedBankQuote:
+        """Intenta extracción directa vía API REST y como respaldo usa navegador Playwright."""
+        # 1. Priorizar llamada directa al API REST oficial (altísima velocidad y precisión)
+        try:
+            return self._execute_direct_api_scrape(principal_uf, term_years, property_value_uf)
+        except Exception as e:
+            logger.info(f"Direct API call de Banco Falabella falló ({e}), intentando vía Playwright...")
+
+        # 2. Intercepción vía navegador Playwright
+        from playwright.sync_api import sync_playwright
+
+        captured_json: Dict[str, Any] = {}
+
+        def handle_response(response):
+            if "simulations" in response.url and response.status == 200 and response.request.method == "POST":
+                try:
+                    res_body = response.json()
+                    if isinstance(res_body, list) and len(res_body) > 0 and "loan" in res_body[0]:
+                        captured_json["data"] = res_body
+                except Exception:
+                    pass
+
+        with sync_playwright() as p:
+            browser = None
+            try:
+                browser = p.chromium.launch(
+                    channel="chrome",
+                    headless=self.headless,
+                    args=self._get_browser_args(),
+                    ignore_default_args=["--enable-automation"],
+                )
+            except Exception:
+                browser = p.chromium.launch(
+                    headless=self.headless,
+                    args=self._get_browser_args(),
+                    ignore_default_args=["--enable-automation"],
+                )
+
+            context = browser.new_context(
+                user_agent=self._get_user_agent(),
+                locale="es-CL",
+                timezone_id="America/Santiago",
+                viewport={"width": 1440, "height": 900},
+            )
+            context.add_init_script("delete Object.getPrototypeOf(navigator).webdriver")
+            page = context.new_page()
+            page.on("response", handle_response)
+
+            down_payment_uf = max(0.0, property_value_uf - principal_uf)
+            down_payment_pct = int(round((down_payment_uf / property_value_uf) * 100.0)) if property_value_uf > 0 else 20
+
+            try:
+                page.goto(self.default_url, timeout=self.timeout_ms, wait_until="domcontentloaded")
+                page.wait_for_timeout(2500)
+
+                frame = None
+                for f in page.frames:
+                    if "nuevosimulador" in f.url:
+                        frame = f
+                        break
+                if not frame:
+                    frame = page.main_frame
+
+                # Step 0: Tarjeta Simular hipotecario
+                sim_card = frame.locator(".radio, text=Simular hipotecario").first
+                if sim_card.count() > 0:
+                    sim_card.click(force=True)
+                    page.wait_for_timeout(1000)
+
+                # Step 1: Comprar Vivienda nueva o usada
+                vivienda_card = frame.locator("text=Comprar Vivienda nueva o usada").first
+                if vivienda_card.count() > 0:
+                    vivienda_card.click(force=True)
+                    page.wait_for_timeout(500)
+                    btn_cont = frame.locator(".button-continuar-container img").first
+                    if btn_cont.count() > 0:
+                        btn_cont.click(force=True)
+                        page.wait_for_timeout(1500)
+
+                # Step 2: Datos personales
+                name_input = frame.locator("input[placeholder*='Nombre']").first
+                if name_input.count() > 0:
+                    name_input.fill("Juan Perez")
+                rut_input = frame.locator("#bf-simulador-rut-field").first
+                if rut_input.count() > 0:
+                    rut_input.click(force=True)
+                    rut_input.type("162345672", delay=20)
+                date_input = frame.locator("input[type='date']").first
+                if date_input.count() > 0:
+                    date_input.fill("1988-06-15")
+                rent_input = frame.locator("input[placeholder='800.000']").first
+                if rent_input.count() > 0:
+                    rent_input.fill("2500000")
+                phone_input = frame.locator("#bf-simulador-phone-field").first
+                if phone_input.count() > 0:
+                    phone_input.fill("912345678")
+                email_input = frame.locator("#bf-simulador-email-field").first
+                if email_input.count() > 0:
+                    email_input.fill("contacto@hiporefi.cl")
+                terms_chk = frame.locator("#chktermsConditions").first
+                if terms_chk.count() > 0:
+                    terms_chk.check(force=True)
+                page.wait_for_timeout(500)
+
+                btn_cont = frame.locator(".button-continuar-container img").first
+                if btn_cont.count() > 0:
+                    btn_cont.click(force=True)
+                    page.wait_for_timeout(2000)
+
+                # Step 3: Tipo de propiedad
+                depto_card = frame.locator(".card:has-text('Departamento')").first
+                if depto_card.count() > 0:
+                    depto_card.click(force=True)
+                usada_card = frame.locator(".card:has-text('Usada')").first
+                if usada_card.count() > 0:
+                    usada_card.click(force=True)
+                page.wait_for_timeout(500)
+                btn_cont = frame.locator(".button-continuar-container img").first
+                if btn_cont.count() > 0:
+                    btn_cont.click(force=True)
+                    page.wait_for_timeout(2000)
+
+                # Step 4: Valor propiedad
+                prop_input = frame.locator(".main-box input").first
+                if prop_input.count() > 0:
+                    prop_input.click(force=True)
+                    prop_input.fill(str(int(property_value_uf)))
+                    page.wait_for_timeout(500)
+                    btn_cont = frame.locator(".button-continuar-container img").first
+                    if btn_cont.count() > 0:
+                        btn_cont.click(force=True)
+                        page.wait_for_timeout(2000)
+
+                # Step 5: Pie porcentaje
+                pie_input = frame.locator(".main-box input").first
+                if pie_input.count() > 0:
+                    pie_input.click(force=True)
+                    pie_input.fill(str(down_payment_pct))
+                    page.wait_for_timeout(500)
+                    btn_cont = frame.locator(".button-continuar-container img").first
+                    if btn_cont.count() > 0:
+                        btn_cont.click(force=True)
+                        page.wait_for_timeout(3000)
+
+                if "data" in captured_json:
+                    return self.parse_api_response(
+                        captured_json["data"],
+                        principal_uf=principal_uf,
+                        term_years=term_years,
+                        property_value_uf=property_value_uf,
+                    )
+
+                return self.parse_html_result(
+                    frame.content(),
+                    principal_uf=principal_uf,
+                    term_years=term_years,
+                    property_value_uf=property_value_uf,
+                )
+            finally:
+                if browser:
+                    browser.close()
+
+    def parse_api_response(
+        self,
+        data: Any,
+        principal_uf: float,
+        term_years: int,
+        property_value_uf: float,
+    ) -> ScrapedBankQuote:
+        """Parsea la respuesta JSON emitida por el API de simulación de Banco Falabella."""
+        items = data if isinstance(data, list) else [data]
+        selected_item = None
+        for it in items:
+            loan = it.get("loan") or {}
+            try:
+                term_val = int(loan.get("term", 0))
+                if term_val == term_years:
+                    selected_item = it
+                    break
+            except (ValueError, TypeError):
+                pass
+
+        if not selected_item and items:
+            selected_item = items[0]
+
+        if not selected_item:
+            return self.generate_fallback_quote(principal_uf, term_years, property_value_uf)
+
+        loan = selected_item.get("loan") or {}
+        rate_info = loan.get("interestRate") or {}
+        annual_rate = float(rate_info.get("annualInterestRate") or 4.30)
+        try:
+            cae_val = float(loan.get("cae") or (annual_rate + 0.40))
+        except (ValueError, TypeError):
+            cae_val = annual_rate + 0.40
+
+        # Dividendos
+        payment = loan.get("payment") or {}
+        monthly_payments = payment.get("monthlyPayment") or []
+        div_financial = None
+        div_total = None
+
+        for mp in monthly_payments:
+            curr_id = (mp.get("currency") or {}).get("id")
+            if curr_id == "CLF":
+                div_financial = float(mp.get("amount") or 0.0)
+                ins_incl = mp.get("insuranceIncluded") or {}
+                div_total = float(ins_incl.get("amount") or 0.0)
+                break
+
+        # Seguros
+        insurance = selected_item.get("insurance") or {}
+        fire_costs = (insurance.get("fire") or {}).get("costs") or []
+        life_costs = (insurance.get("mortgageProtection") or {}).get("costs") or []
+
+        fire_uf = None
+        for fc in fire_costs:
+            if (fc.get("currency") or {}).get("id") == "CLF":
+                fire_uf = float(fc.get("amount") or 0.0)
+                break
+
+        life_uf = None
+        for lc in life_costs:
+            if (lc.get("currency") or {}).get("id") == "CLF":
+                life_uf = float(lc.get("amount") or 0.0)
+                break
+
+        expenses = selected_item.get("expenses") or {}
+        op_expenses_uf = None
+        for oe in expenses.get("totalOperationalExpenses") or []:
+            if (oe.get("currency") or {}).get("id") == "CLF":
+                op_expenses_uf = float(oe.get("amount") or 0.0)
+                break
+
+        clf_rate = (selected_item.get("clf") or {}).get("amount")
+
+        return self._build_quote(
+            principal_uf=principal_uf,
+            term_years=term_years,
+            property_value_uf=property_value_uf,
+            rate_pct=annual_rate,
+            div_financial_uf=div_financial,
+            div_total_uf=div_total,
+            fire_uf=fire_uf,
+            life_uf=life_uf,
+            cae_pct=cae_val,
+            source="FALABELLA_API_LIVE",
+            raw_meta={
+                "institution": "Banco Falabella",
+                "channel": "APIGEE_REST_LIVE",
+                "operational_expenses_uf": op_expenses_uf,
+                "clf_rate": clf_rate,
+                "simulation_id": (selected_item.get("simulation") or {}).get("id"),
+            },
+        )
+
+    def parse_html_result(
+        self,
+        html_content: str,
+        principal_uf: float,
+        term_years: int,
+        property_value_uf: float,
+    ) -> ScrapedBankQuote:
+        """Parsea el HTML resultante de la vista de simulación de Banco Falabella."""
+        if "monthlyPayment" in html_content or "annualInterestRate" in html_content:
+            try:
+                import json
+                m = re.search(r'(\[?\{[\s\S]*?"annualInterestRate"[\s\S]*?\}?\]?)', html_content)
+                if m:
+                    data = json.loads(m.group(1))
+                    return self.parse_api_response(data, principal_uf, term_years, property_value_uf)
+            except Exception:
+                pass
+
+        text = self._extract_text_from_html(html_content)
+
+        tasa_match = re.search(r"tasa\s*anual[:\s]*([0-9]+[,\.][0-9]+)\s*%", text, re.IGNORECASE)
+        if not tasa_match:
+            tasa_match = re.search(r"([0-9]+[,\.][0-9]+)\s*%\s*(?:tasa|anual)", text, re.IGNORECASE)
+        rate_val = self._extract_number(tasa_match.group(1)) if tasa_match else 4.30
+
+        div_match = re.search(r"dividendo[^0-9\n]*?UF\s*([0-9]+[,\.][0-9]+)", text, re.IGNORECASE)
+        if not div_match:
+            div_match = re.search(r"UF\s*([0-9]+[,\.][0-9]+)\s*/\s*\$", text, re.IGNORECASE)
+        if not div_match:
+            div_match = re.search(r"dividendo[:\s]*UF\s*([0-9]+[,\.][0-9]+)", text, re.IGNORECASE)
+        if not div_match:
+            div_match = re.search(r"([0-9]+[,\.][0-9]+)\s*UF", text, re.IGNORECASE)
+        div_val = self._extract_number(div_match.group(1)) if div_match else None
+
+        cae_match = re.search(r"CAE[:\s]*([0-9]+[,\.][0-9]+)\s*%", text, re.IGNORECASE)
+        cae_val = self._extract_number(cae_match.group(1)) if cae_match else None
+
+        return self._build_quote(
+            principal_uf=principal_uf,
+            term_years=term_years,
+            property_value_uf=property_value_uf,
+            rate_pct=rate_val or 4.30,
+            div_financial_uf=div_val,
+            cae_pct=cae_val,
+            source="FALABELLA_HTML",
+            raw_meta={"institution": "Banco Falabella", "channel": "SIMULADOR_DIGITAL_HTML"},
+        )
+
+    def generate_fallback_quote(
+        self,
+        principal_uf: float,
+        term_years: int,
+        property_value_uf: float,
+    ) -> ScrapedBankQuote:
+        """Genera cotización calibrada con las condiciones comerciales de Banco Falabella."""
+        return self._build_quote(
+            principal_uf=principal_uf,
+            term_years=term_years,
+            property_value_uf=property_value_uf,
+            rate_pct=4.30,
+            cae_pct=4.70,
+            source="HEADLESS_FALLBACK",
+            raw_meta={"institution": "Banco Falabella", "channel": "PARAMETRIC_FALLBACK"},
+        )
+
+    def _build_quote(
+        self,
+        principal_uf: float,
+        term_years: int,
+        property_value_uf: float,
+        rate_pct: float,
+        div_financial_uf: Optional[float] = None,
+        div_total_uf: Optional[float] = None,
+        fire_uf: Optional[float] = None,
+        life_uf: Optional[float] = None,
+        cae_pct: Optional[float] = None,
+        source: str = "FALABELLA_API_LIVE",
+        raw_meta: Optional[Dict[str, Any]] = None,
+    ) -> ScrapedBankQuote:
+        fire_calc = fire_uf if fire_uf is not None else (property_value_uf * 0.70 * 0.00014)
+        life_calc = life_uf if life_uf is not None else (principal_uf * 0.00028)
+
+        months = term_years * 12
+        params = MortgageParams(
+            principal=principal_uf,
+            annual_rate=rate_pct / 100.0,
+            months_remaining=months,
+            fire_insurance_monthly_uf=fire_calc,
+            life_insurance_rate_monthly=0.00028,
+        )
+        schedule = FrenchAmortizer.generate_schedule(params)
+        first_m = schedule[0]
+
+        final_financial = div_financial_uf if div_financial_uf is not None else first_m["financial_dividend_uf"]
+        final_total = div_total_uf if div_total_uf is not None else (final_financial + fire_calc + life_calc)
+
+        annual_insurance_pct = ((fire_calc + life_calc) * 12 / principal_uf) * 100.0
+        final_cae = cae_pct if cae_pct is not None else (rate_pct + annual_insurance_pct)
+
+        return ScrapedBankQuote(
+            bank_id=self.bank_id,
+            bank_name=self.bank_name,
+            loan_type="Tasa Fija",
+            term_years=term_years,
+            principal_uf=principal_uf,
+            property_value_uf=property_value_uf,
+            annual_rate_pct=rate_pct,
+            monthly_financial_dividend_uf=round(final_financial, 3),
+            monthly_total_dividend_uf=round(final_total, 3),
+            fire_insurance_uf=round(fire_calc, 4),
+            life_insurance_uf=round(life_calc, 4),
+            cae_pct=round(final_cae, 2),
+            source=source,
+            raw_metadata=raw_meta or {"institution": "Banco Falabella", "channel": "SIMULADOR_DIGITAL"},
+        )
+
+
 class HeadlessMarketScraperCoordinator:
     """
     Coordinador de scrapers headless bancarios.
@@ -1647,6 +2161,7 @@ class HeadlessMarketScraperCoordinator:
         "itau": ItauScraper,
         "consorcio": ConsorcioScraper,
         "internacional": BancoInternacionalScraper,
+        "falabella": BancoFalabellaScraper,
     }
 
     def __init__(self, headless: bool = True, timeout_ms: int = 15000):

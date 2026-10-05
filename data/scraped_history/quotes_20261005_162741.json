@@ -1,0 +1,66 @@
+{
+  "timestamp": "2026-10-05T16:27:41.582093",
+  "principal_uf": 3200.0,
+  "term_years": 20,
+  "records_saved": 2,
+  "quotes": [
+    {
+      "bank_id": "bancoestado",
+      "bank_name": "BancoEstado",
+      "loan_type": "Tasa Fija (Crédito Habita Casaverso)",
+      "term_years": 20,
+      "principal_uf": 3200.0,
+      "property_value_uf": 4000.0,
+      "annual_rate_pct": 4.19,
+      "monthly_financial_dividend_uf": 19.58,
+      "monthly_total_dividend_uf": 19.898,
+      "fire_insurance_uf": 0.079,
+      "life_insurance_uf": 0.238,
+      "cae_pct": 4.31,
+      "source": "PLAYWRIGHT_HEADLESS",
+      "timestamp": "2026-10-05T16:27:38.918401",
+      "raw_metadata": {
+        "institution": "Banco del Estado de Chile (Casaverso)",
+        "mode": "headless_playwright",
+        "portal": "casaverso.cl",
+        "available_terms": {
+          "15": {
+            "div_clp": 1001982.0,
+            "rate_pct": 4.34
+          },
+          "20": {
+            "div_clp": 816937.0,
+            "rate_pct": 4.19
+          },
+          "25": {
+            "div_clp": 718065.0,
+            "rate_pct": 4.24
+          }
+        },
+        "matched_term_years": 20,
+        "monthly_dividend_clp": 816937.0,
+        "uf_reference": 41057.2
+      }
+    },
+    {
+      "bank_id": "santander",
+      "bank_name": "Banco Santander Chile",
+      "loan_type": "Tasa Fija Hipotecario Santander",
+      "term_years": 20,
+      "principal_uf": 3200.0,
+      "property_value_uf": 4000.0,
+      "annual_rate_pct": 4.4,
+      "monthly_financial_dividend_uf": 19.924,
+      "monthly_total_dividend_uf": 21.208,
+      "fire_insurance_uf": 0.42,
+      "life_insurance_uf": 0.864,
+      "cae_pct": 4.88,
+      "source": "PLAYWRIGHT_HEADLESS",
+      "timestamp": "2026-10-05T16:27:41.560741",
+      "raw_metadata": {
+        "institution": "Banco Santander Chile",
+        "mode": "headless_playwright"
+      }
+    }
+  ]
+}

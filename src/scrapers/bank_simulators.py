@@ -112,6 +112,14 @@ class BankSimulatorProvider:
             "life_rate_monthly": 0.00028,
         },
         {
+            "id": "falabella",
+            "name": "Banco Falabella",
+            "loan_types": ["Tasa Fija"],
+            "spread_pct": -0.35,  # Tasa observada ~4.30% frente a benchmark 4.65%
+            "fire_rate_monthly": 0.00014,
+            "life_rate_monthly": 0.00028,
+        },
+        {
             "id": "mutuaria_security",
             "name": "Mutuaria Security",
             "loan_types": ["Mutuo Endosable Fijo"],
