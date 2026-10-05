@@ -13,7 +13,7 @@
     "life_insurance_uf": 0.896,
     "cae_pct": 3.83,
     "source": "PLAYWRIGHT_HEADLESS",
-    "timestamp": "2026-10-05T10:39:17.238873",
+    "timestamp": "2026-10-05T11:06:48.177546",
     "raw_metadata": {
       "institution": "Banco de Crédito e Inversiones",
       "mode": "headless_playwright"
@@ -33,7 +33,7 @@
     "life_insurance_uf": 0.238,
     "cae_pct": 4.31,
     "source": "PLAYWRIGHT_HEADLESS",
-    "timestamp": "2026-10-05T10:39:10.302693",
+    "timestamp": "2026-10-05T11:06:41.957649",
     "raw_metadata": {
       "institution": "Banco del Estado de Chile (Casaverso)",
       "mode": "headless_playwright",
@@ -71,7 +71,7 @@
     "life_insurance_uf": 0.28,
     "cae_pct": 5.25,
     "source": "TOCTOC_ITAU_LIVE",
-    "timestamp": "2026-10-05T10:39:17.914070",
+    "timestamp": "2026-10-05T11:06:49.079260",
     "raw_metadata": {
       "provider": "TOCTOC + Itaú Alianza Hipotecaria",
       "endpoint": "https://www.toctoc.com/credito-hipotecario/gw-financiamiento/getCalcResults",
@@ -93,7 +93,7 @@
     "life_insurance_uf": 0.864,
     "cae_pct": 4.88,
     "source": "PLAYWRIGHT_HEADLESS",
-    "timestamp": "2026-10-05T10:39:12.981453",
+    "timestamp": "2026-10-05T11:06:44.686676",
     "raw_metadata": {
       "institution": "Banco Santander Chile",
       "mode": "headless_playwright"
@@ -113,10 +113,32 @@
     "life_insurance_uf": 0.896,
     "cae_pct": 4.91,
     "source": "HEADLESS_FALLBACK",
-    "timestamp": "2026-10-05T10:39:51.911406",
+    "timestamp": "2026-10-05T11:07:25.035169",
     "raw_metadata": {
       "institution": "Banco Consorcio",
       "channel": "SIMULADOR_DIGITAL_BFF"
+    }
+  },
+  {
+    "bank_id": "internacional",
+    "bank_name": "Banco Internacional",
+    "loan_type": "Tasa Fija (Crédito Tradicional)",
+    "term_years": 20,
+    "principal_uf": 3200.0,
+    "property_value_uf": 4000.0,
+    "annual_rate_pct": 4.6,
+    "monthly_financial_dividend_uf": 20.418,
+    "monthly_total_dividend_uf": 21.706,
+    "fire_insurance_uf": 0.392,
+    "life_insurance_uf": 0.896,
+    "cae_pct": 5.08,
+    "source": "INTERNACIONAL_API_LIVE",
+    "timestamp": "2026-10-05T11:07:35.805456",
+    "raw_metadata": {
+      "institution": "Banco Internacional",
+      "channel": "APIGEE_SIMULATOR",
+      "requestId": "c2239f20-56bf-405e-a94d-577ed2717e52",
+      "minimumRentRequired": 2797129.3
     }
   }
 ]

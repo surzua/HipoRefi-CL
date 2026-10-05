@@ -13,6 +13,7 @@ from src.scrapers.headless_scrapers import (
     BCIScraper,
     ItauScraper,
     ConsorcioScraper,
+    BancoInternacionalScraper,
     HeadlessMarketScraperCoordinator,
 )
 from src.data.market_store import MarketDataStore
@@ -257,6 +258,90 @@ def test_consorcio_scraper_html_parsing():
     assert quote.source == "CONSORCIO_HTML"
 
 
+def test_internacional_scraper_api_parsing():
+    """Valida la extracción de Banco Internacional a partir de la respuesta JSON de Apigee."""
+    scraper = BancoInternacionalScraper(timeout_ms=5000, headless=True)
+
+    mock_api_data = {
+        "requestId": "test-uuid-inter-123",
+        "firstInstallmentUF": 20.418,
+        "firstInstallmentPesos": 839138.79,
+        "mortgageLoanAmount": 3200,
+        "annualRate": 4.6,
+        "minimumRentRequired": 2797129.3,
+        "simulationInfoList": [
+            {
+                "term": 15,
+                "annualRate": 0.046,
+                "firstInstallmentUF": 24.644,
+                "totalPaidUF": 4435.85,
+                "selected": False,
+            },
+            {
+                "term": 20,
+                "annualRate": 0.046,
+                "firstInstallmentUF": 20.418,
+                "totalPaidUF": 4900.30,
+                "selected": True,
+            },
+            {
+                "term": 25,
+                "annualRate": 0.046,
+                "firstInstallmentUF": 17.969,
+                "totalPaidUF": 5390.63,
+                "selected": False,
+            },
+        ],
+    }
+
+    quote = scraper.parse_api_response(
+        data=mock_api_data,
+        principal_uf=3200.0,
+        term_years=20,
+        property_value_uf=4000.0,
+    )
+
+    assert quote.bank_id == "internacional"
+    assert quote.bank_name == "Banco Internacional"
+    assert quote.annual_rate_pct == 4.60
+    assert quote.monthly_financial_dividend_uf == 20.418
+    assert quote.monthly_total_dividend_uf > quote.monthly_financial_dividend_uf
+    assert quote.fire_insurance_uf > 0
+    assert quote.life_insurance_uf > 0
+    assert quote.cae_pct > 4.60
+    assert quote.source == "INTERNACIONAL_API_LIVE"
+    assert quote.raw_metadata.get("requestId") == "test-uuid-inter-123"
+
+
+def test_internacional_scraper_html_parsing():
+    """Valida la extracción de Banco Internacional a partir del HTML/DOM de éxito."""
+    scraper = BancoInternacionalScraper(timeout_ms=5000, headless=True)
+
+    mock_html = """
+    <div class="result-container">
+        <h2>Resultado de tu Simulación</h2>
+        <div class="dividend-text">El monto estimado del dividendo mensual de tu crédito es:</div>
+        <div class="dividend-highlight">UF 20,42 / $839.139</div>
+        <div class="detail-row">Tasa Anual: 4.6%</div>
+        <div class="detail-row">Plazo: 20 años</div>
+        <div class="detail-row">Financiamiento: 80%</div>
+    </div>
+    """
+
+    quote = scraper.scrape(
+        principal_uf=3200.0,
+        term_years=20,
+        property_value_uf=4000.0,
+        custom_html=mock_html,
+    )
+
+    assert quote.bank_id == "internacional"
+    assert quote.annual_rate_pct == 4.60
+    assert quote.monthly_financial_dividend_uf == 20.42
+    assert quote.monthly_total_dividend_uf > 20.42
+    assert quote.source == "INTERNACIONAL_HTML"
+
+
 def test_scraper_fallback_generation():
     """Valida que los fallbacks generen cotizaciones cuantitativas válidas y coherentes."""
     be = BancoEstadoScraper()
@@ -264,14 +349,16 @@ def test_scraper_fallback_generation():
     bci = BCIScraper()
     itau = ItauScraper()
     cs = ConsorcioScraper()
+    bi = BancoInternacionalScraper()
 
     q_be = be.generate_fallback_quote(3200.0, 20, 4000.0)
     q_st = st.generate_fallback_quote(3200.0, 20, 4000.0)
     q_bci = bci.generate_fallback_quote(3200.0, 20, 4000.0)
     q_itau = itau.generate_fallback_quote(3200.0, 20, 4000.0)
     q_cs = cs.generate_fallback_quote(3200.0, 20, 4000.0)
+    q_bi = bi.generate_fallback_quote(3200.0, 20, 4000.0)
 
-    for q in [q_be, q_st, q_bci, q_itau, q_cs]:
+    for q in [q_be, q_st, q_bci, q_itau, q_cs, q_bi]:
         assert q.source == "HEADLESS_FALLBACK"
         assert 3.5 <= q.annual_rate_pct <= 6.0
         assert q.monthly_total_dividend_uf > q.monthly_financial_dividend_uf
@@ -288,12 +375,12 @@ def test_coordinator_sync_to_duckdb(memory_store):
         store=memory_store,
         principal_uf=3200.0,
         term_years=20,
-        bank_ids=["bancoestado", "santander", "bci", "itau", "consorcio"],
+        bank_ids=["bancoestado", "santander", "bci", "itau", "consorcio", "internacional"],
     )
 
     assert res["status"] == "SUCCESS"
-    assert res["offers_scraped"] == 5
-    assert res["records_saved"] == 5
+    assert res["offers_scraped"] == 6
+    assert res["records_saved"] == 6
 
     # Verificar lectura desde store
     offers = memory_store.get_active_bank_offers(term_years=20)
@@ -303,6 +390,7 @@ def test_coordinator_sync_to_duckdb(memory_store):
     assert any("BCI" in b or "Crédito e Inversiones" in b for b in offer_banks)
     assert any("Itaú" in b for b in offer_banks)
     assert any("Consorcio" in b for b in offer_banks)
+    assert any("Internacional" in b for b in offer_banks)
 
 
 def test_market_service_live_scraped_priority(memory_store):

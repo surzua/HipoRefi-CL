@@ -1324,6 +1324,316 @@ class ConsorcioScraper(BaseHeadlessScraper):
         )
 
 
+class BancoInternacionalScraper(BaseHeadlessScraper):
+    """
+    Scraper para el cotizador hipotecario oficial de Banco Internacional
+    (https://www.internacional.cl/simulador-credito-hipotecario y https://credito.internacional.cl/mortgage-credit).
+    Soporta extracción vía intercepción del API oficial en Apigee (/mortgage/api/v1/simulator/simulate),
+    parseo DOM/HTML y fallback cuantitativo paramétrico.
+    """
+
+    DEFAULT_SIMULATOR_URL = "https://credito.internacional.cl/mortgage-credit"
+    PORTAL_SIMULATOR_URL = "https://www.internacional.cl/simulador-credito-hipotecario"
+
+    def __init__(self, timeout_ms: int = 15000, headless: bool = True):
+        super().__init__(
+            bank_id="internacional",
+            bank_name="Banco Internacional",
+            default_url=self.DEFAULT_SIMULATOR_URL,
+            timeout_ms=timeout_ms,
+            headless=headless,
+        )
+
+    def _execute_playwright_scrape(
+        self,
+        principal_uf: float,
+        term_years: int,
+        property_value_uf: float,
+    ) -> ScrapedBankQuote:
+        from playwright.sync_api import sync_playwright
+
+        captured_json: Dict[str, Any] = {}
+
+        def handle_response(response):
+            if "simulator/simulate" in response.url and response.status == 200:
+                try:
+                    captured_json["data"] = response.json()
+                except Exception:
+                    pass
+
+        with sync_playwright() as p:
+            browser = None
+            try:
+                browser = p.chromium.launch(
+                    channel="chrome",
+                    headless=self.headless,
+                    args=self._get_browser_args(),
+                    ignore_default_args=["--enable-automation"],
+                )
+            except Exception:
+                browser = p.chromium.launch(
+                    headless=self.headless,
+                    args=self._get_browser_args(),
+                    ignore_default_args=["--enable-automation"],
+                )
+
+            context = browser.new_context(
+                user_agent=self._get_user_agent(),
+                locale="es-CL",
+                timezone_id="America/Santiago",
+                viewport={"width": 1440, "height": 900},
+            )
+            context.add_init_script("delete Object.getPrototypeOf(navigator).webdriver")
+            page = context.new_page()
+            page.on("response", handle_response)
+
+            down_payment_uf = max(0.0, property_value_uf - principal_uf)
+
+            try:
+                page.goto(self.default_url, timeout=self.timeout_ms, wait_until="domcontentloaded")
+                page.wait_for_timeout(2500)
+
+                # 1. Datos personales (simulación genérica no invasiva)
+                name_input = page.locator("input#nameForm, input[name='nameForm']")
+                if name_input.count() > 0:
+                    name_input.first.fill("Juan Perez")
+                    page.wait_for_timeout(200)
+
+                rut_input = page.locator("input#rut, input[name='rut']")
+                if rut_input.count() > 0:
+                    rut_input.first.click()
+                    rut_input.first.type("123456785", delay=20)
+                    page.wait_for_timeout(200)
+
+                email_input = page.locator("input#email, input[name='email']")
+                if email_input.count() > 0:
+                    email_input.first.fill("contacto@hiporefi.cl")
+                    page.wait_for_timeout(200)
+
+                phone_input = page.locator("input#phone, input[name='phone']")
+                if phone_input.count() > 0:
+                    phone_input.first.fill("912345678")
+                    page.wait_for_timeout(200)
+
+                # Condición de la propiedad (react-select-2)
+                prop_cond_select = page.locator("#react-select-2-input")
+                if prop_cond_select.count() > 0:
+                    prop_cond_select.focus()
+                    page.keyboard.press("ArrowDown")
+                    page.wait_for_timeout(200)
+                    page.keyboard.press("Enter")
+                    page.wait_for_timeout(200)
+
+                # 2. Monto y Pie
+                amount_input = page.locator("input#amountUf, input[name='amountUf']")
+                if amount_input.count() > 0:
+                    amount_input.first.fill(str(int(property_value_uf)))
+                    page.wait_for_timeout(300)
+
+                down_input = page.locator("input#downPayment, input[name='downPayment']")
+                if down_input.count() > 0:
+                    down_input.first.fill(str(int(down_payment_uf)))
+                    page.wait_for_timeout(300)
+
+                # 3. Plazo del crédito (react-select-3)
+                term_select = page.locator("#react-select-3-input")
+                if term_select.count() > 0:
+                    term_select.focus()
+                    page.keyboard.press("ArrowDown")
+                    page.wait_for_timeout(200)
+                    term_options = page.query_selector_all("div[id*='-option-']")
+                    matched_term = False
+                    for opt in term_options:
+                        if str(term_years) in opt.inner_text():
+                            opt.click()
+                            matched_term = True
+                            break
+                    if not matched_term:
+                        page.keyboard.press("Enter")
+                    page.wait_for_timeout(300)
+
+                # 4. Tipo de crédito: Crédito Tradicional (Tasa Fija)
+                trad_label = page.locator("label[for='tasaFija'], input#tasaFija")
+                if trad_label.count() > 0:
+                    trad_label.first.click()
+                    page.wait_for_timeout(300)
+
+                # 5. Clic en botón Simular
+                sim_btn = page.locator("button:has-text('Simular')")
+                if sim_btn.count() > 0:
+                    sim_btn.first.click()
+                    page.wait_for_timeout(4500)
+
+                if "data" in captured_json:
+                    return self.parse_api_response(
+                        data=captured_json["data"],
+                        principal_uf=principal_uf,
+                        term_years=term_years,
+                        property_value_uf=property_value_uf,
+                    )
+
+                return self.parse_html_result(
+                    html_content=page.content(),
+                    principal_uf=principal_uf,
+                    term_years=term_years,
+                    property_value_uf=property_value_uf,
+                )
+            finally:
+                if browser:
+                    browser.close()
+
+    def parse_api_response(
+        self,
+        data: Dict[str, Any],
+        principal_uf: float,
+        term_years: int,
+        property_value_uf: float,
+    ) -> ScrapedBankQuote:
+        """Parsea la respuesta JSON emitida por el API de simulación de Banco Internacional en Apigee."""
+        annual_rate = 4.60
+        div_financial = None
+
+        # Revisar simulationInfoList para el plazo solicitado
+        info_list = data.get("simulationInfoList") or []
+        for info in info_list:
+            if info.get("term") == term_years:
+                raw_rate = info.get("annualRate")
+                if raw_rate is not None:
+                    annual_rate = raw_rate * 100.0 if raw_rate < 1.0 else float(raw_rate)
+                div_financial = info.get("firstInstallmentUF")
+                break
+
+        # Fallback al nivel raíz de la respuesta
+        if div_financial is None:
+            div_financial = data.get("firstInstallmentUF")
+        if data.get("annualRate") is not None and annual_rate == 4.60:
+            root_rate = data.get("annualRate")
+            annual_rate = root_rate * 100.0 if root_rate < 1.0 else float(root_rate)
+
+        return self._build_quote(
+            principal_uf=principal_uf,
+            term_years=term_years,
+            property_value_uf=property_value_uf,
+            rate_pct=annual_rate,
+            div_financial_uf=div_financial,
+            source="INTERNACIONAL_API_LIVE",
+            raw_meta={
+                "institution": "Banco Internacional",
+                "channel": "APIGEE_SIMULATOR",
+                "requestId": data.get("requestId"),
+                "minimumRentRequired": data.get("minimumRentRequired"),
+            },
+        )
+
+    def parse_html_result(
+        self,
+        html_content: str,
+        principal_uf: float,
+        term_years: int,
+        property_value_uf: float,
+    ) -> ScrapedBankQuote:
+        """Parsea el HTML resultante de la vista de simulación de Banco Internacional."""
+        if "firstInstallmentUF" in html_content:
+            try:
+                import json
+                m = re.search(r'(\{[\s\S]*?"firstInstallmentUF"[\s\S]*?\})', html_content)
+                if m:
+                    data = json.loads(m.group(1))
+                    return self.parse_api_response(data, principal_uf, term_years, property_value_uf)
+            except Exception:
+                pass
+
+        text = self._extract_text_from_html(html_content)
+
+        tasa_match = re.search(r"tasa\s*anual[:\s]*([0-9]+[,\.][0-9]+)\s*%", text, re.IGNORECASE)
+        if not tasa_match:
+            tasa_match = re.search(r"([0-9]+[,\.][0-9]+)\s*%\s*(?:tasa|anual)", text, re.IGNORECASE)
+        rate_val = self._extract_number(tasa_match.group(1)) if tasa_match else 4.60
+
+        div_match = re.search(r"UF\s*([0-9]+[,\.][0-9]+)\s*/\s*\$", text, re.IGNORECASE)
+        if not div_match:
+            div_match = re.search(r"dividendo[:\s]*UF\s*([0-9]+[,\.][0-9]+)", text, re.IGNORECASE)
+        if not div_match:
+            div_match = re.search(r"([0-9]+[,\.][0-9]+)\s*UF", text, re.IGNORECASE)
+        div_val = self._extract_number(div_match.group(1)) if div_match else None
+
+        return self._build_quote(
+            principal_uf=principal_uf,
+            term_years=term_years,
+            property_value_uf=property_value_uf,
+            rate_pct=rate_val or 4.60,
+            div_financial_uf=div_val,
+            source="INTERNACIONAL_HTML",
+            raw_meta={"institution": "Banco Internacional", "channel": "SIMULADOR_DIGITAL_HTML"},
+        )
+
+    def generate_fallback_quote(
+        self,
+        principal_uf: float,
+        term_years: int,
+        property_value_uf: float,
+    ) -> ScrapedBankQuote:
+        """Genera cotización calibrada con las condiciones comerciales de Banco Internacional."""
+        return self._build_quote(
+            principal_uf=principal_uf,
+            term_years=term_years,
+            property_value_uf=property_value_uf,
+            rate_pct=4.60,
+            source="HEADLESS_FALLBACK",
+            raw_meta={"institution": "Banco Internacional", "channel": "PARAMETRIC_FALLBACK"},
+        )
+
+    def _build_quote(
+        self,
+        principal_uf: float,
+        term_years: int,
+        property_value_uf: float,
+        rate_pct: float,
+        div_financial_uf: Optional[float] = None,
+        fire_uf: Optional[float] = None,
+        life_uf: Optional[float] = None,
+        cae_pct: Optional[float] = None,
+        source: str = "INTERNACIONAL_API_LIVE",
+        raw_meta: Optional[Dict[str, Any]] = None,
+    ) -> ScrapedBankQuote:
+        fire_calc = fire_uf or (property_value_uf * 0.70 * 0.00014)
+        life_calc = life_uf or (principal_uf * 0.00028)
+
+        months = term_years * 12
+        params = MortgageParams(
+            principal=principal_uf,
+            annual_rate=rate_pct / 100.0,
+            months_remaining=months,
+            fire_insurance_monthly_uf=fire_calc,
+            life_insurance_rate_monthly=0.00028,
+        )
+        schedule = FrenchAmortizer.generate_schedule(params)
+        first_m = schedule[0]
+
+        final_financial = div_financial_uf or first_m["financial_dividend_uf"]
+        final_total = final_financial + fire_calc + life_calc
+
+        annual_insurance_pct = ((fire_calc + life_calc) * 12 / principal_uf) * 100.0
+        final_cae = cae_pct or (rate_pct + annual_insurance_pct)
+
+        return ScrapedBankQuote(
+            bank_id=self.bank_id,
+            bank_name=self.bank_name,
+            loan_type="Tasa Fija (Crédito Tradicional)",
+            term_years=term_years,
+            principal_uf=principal_uf,
+            property_value_uf=property_value_uf,
+            annual_rate_pct=rate_pct,
+            monthly_financial_dividend_uf=round(final_financial, 3),
+            monthly_total_dividend_uf=round(final_total, 3),
+            fire_insurance_uf=round(fire_calc, 4),
+            life_insurance_uf=round(life_calc, 4),
+            cae_pct=round(final_cae, 2),
+            source=source,
+            raw_metadata=raw_meta or {"institution": "Banco Internacional", "channel": "SIMULADOR_DIGITAL"},
+        )
+
+
 class HeadlessMarketScraperCoordinator:
     """
     Coordinador de scrapers headless bancarios.
@@ -1336,6 +1646,7 @@ class HeadlessMarketScraperCoordinator:
         "bci": BCIScraper,
         "itau": ItauScraper,
         "consorcio": ConsorcioScraper,
+        "internacional": BancoInternacionalScraper,
     }
 
     def __init__(self, headless: bool = True, timeout_ms: int = 15000):

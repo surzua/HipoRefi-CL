@@ -33,6 +33,7 @@ class HeuristicStatementParser:
         ("Banco Security", [r"security"]),
         ("Mutuaria Security", [r"mutuaria security"]),
         ("Consorcio", [r"consorcio"]),
+        ("Banco Internacional", [r"internacional", r"banco internacional"]),
         ("Principal", [r"principal"]),
     ]
 

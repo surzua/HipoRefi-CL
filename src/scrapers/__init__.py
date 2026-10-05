@@ -12,6 +12,7 @@ from src.scrapers.headless_scrapers import (
     BCIScraper,
     ItauScraper,
     ConsorcioScraper,
+    BancoInternacionalScraper,
     HeadlessMarketScraperCoordinator,
 )
 
@@ -29,6 +30,7 @@ __all__ = [
     "BCIScraper",
     "ItauScraper",
     "ConsorcioScraper",
+    "BancoInternacionalScraper",
     "HeadlessMarketScraperCoordinator",
 ]
 

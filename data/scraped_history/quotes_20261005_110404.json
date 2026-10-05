@@ -1,0 +1,30 @@
+{
+  "timestamp": "2026-10-05T11:04:04.967247",
+  "principal_uf": 3200.0,
+  "term_years": 20,
+  "records_saved": 1,
+  "quotes": [
+    {
+      "bank_id": "internacional",
+      "bank_name": "Banco Internacional",
+      "loan_type": "Tasa Fija (Crédito Tradicional)",
+      "term_years": 20,
+      "principal_uf": 3200.0,
+      "property_value_uf": 4000.0,
+      "annual_rate_pct": 4.6,
+      "monthly_financial_dividend_uf": 20.418,
+      "monthly_total_dividend_uf": 21.706,
+      "fire_insurance_uf": 0.392,
+      "life_insurance_uf": 0.896,
+      "cae_pct": 5.08,
+      "source": "INTERNACIONAL_API_LIVE",
+      "timestamp": "2026-10-05T11:04:04.820112",
+      "raw_metadata": {
+        "institution": "Banco Internacional",
+        "channel": "APIGEE_SIMULATOR",
+        "requestId": "bd0e713b-4de1-4a58-b4e5-bc53fa401cfa",
+        "minimumRentRequired": 2797129.3
+      }
+    }
+  ]
+}

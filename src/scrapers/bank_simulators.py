@@ -104,6 +104,14 @@ class BankSimulatorProvider:
             "life_rate_monthly": 0.00028,
         },
         {
+            "id": "internacional",
+            "name": "Banco Internacional",
+            "loan_types": ["Tasa Fija (Crédito Tradicional)", "Crédito Adiós Arriendo"],
+            "spread_pct": -0.05,
+            "fire_rate_monthly": 0.00014,
+            "life_rate_monthly": 0.00028,
+        },
+        {
             "id": "mutuaria_security",
             "name": "Mutuaria Security",
             "loan_types": ["Mutuo Endosable Fijo"],
