@@ -44,3 +44,6 @@ data/raw/*
 !data/raw/.gitkeep
 data/processed/*
 !data/processed/.gitkeep
+data/scraped_history/*
+!data/scraped_history/.gitkeep
+

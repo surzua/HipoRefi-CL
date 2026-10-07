@@ -181,6 +181,7 @@ def test_itau_scraper_parsing():
     assert quote.source == "TOCTOC_ITAU_HTML"
 
 
+@pytest.mark.slow
 def test_itau_scraper_live_toctoc():
     """Valida la consulta en vivo de Itaú a través del gateway TOCTOC."""
     scraper = ItauScraper(timeout_ms=10000, headless=True)
@@ -450,6 +451,7 @@ def test_scraper_fallback_generation():
         assert q.life_insurance_uf > 0
 
 
+@pytest.mark.slow
 def test_coordinator_sync_to_duckdb(memory_store):
     """Valida que el coordinador ejecute scrapers y actualice bank_offers en DuckDB."""
     coordinator = HeadlessMarketScraperCoordinator(headless=True, timeout_ms=5000)
@@ -512,6 +514,7 @@ def test_market_service_live_scraped_priority(memory_store):
     assert be_live.annual_rate_pct == 4.10
 
 
+@pytest.mark.slow
 def test_cli_sync_live_market_dry_run():
     """Valida la ejecución del script CLI `sync_live_market.py` con argumentos --dry-run y --json."""
     cmd = [
@@ -529,6 +532,7 @@ def test_cli_sync_live_market_dry_run():
     assert '"bank_id": "bancoestado"' in result.stdout
 
 
+@pytest.mark.slow
 def test_api_scrape_sync_and_live_offers():
     """Valida los endpoints POST /scrape-sync y GET /live-offers en la API FastAPI."""
     client = TestClient(app)

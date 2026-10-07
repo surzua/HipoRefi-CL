@@ -7,6 +7,7 @@ Ley N° 21.236 (Portabilidad Financiera), D.L. 3475 (Timbres y Estampillas) y LG
 import sys
 from pathlib import Path
 import io
+import textwrap
 import pandas as pd
 import streamlit as st
 
@@ -52,7 +53,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-st.markdown("""
+st.html("""
 <style>
     .main-title {
         font-size: 2.2rem;
@@ -68,9 +69,10 @@ st.markdown("""
     .metric-card {
         background: linear-gradient(135deg, #F8F9F9 0%, #EBEDEF 100%);
         border-radius: 10px;
-        padding: 15px;
+        padding: 18px 20px;
         border-left: 5px solid #2980B9;
-        margin-bottom: 10px;
+        margin-bottom: 15px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
     }
     .badge-recommended {
         background-color: #D4EFDF;
@@ -78,6 +80,7 @@ st.markdown("""
         padding: 4px 10px;
         border-radius: 12px;
         font-weight: bold;
+        display: inline-block;
     }
     .badge-caution {
         background-color: #FCF3CF;
@@ -85,6 +88,7 @@ st.markdown("""
         padding: 4px 10px;
         border-radius: 12px;
         font-weight: bold;
+        display: inline-block;
     }
     .badge-not-recommended {
         background-color: #FADBD8;
@@ -92,9 +96,10 @@ st.markdown("""
         padding: 4px 10px;
         border-radius: 12px;
         font-weight: bold;
+        display: inline-block;
     }
 </style>
-""", unsafe_allow_html=True)
+""")
 
 
 # ============================================================================
@@ -192,8 +197,8 @@ def modal_validation_dialog(extracted_data):
 # Encabezado Principal e Indicadores Macroeconómicos
 # ============================================================================
 
-st.markdown('<div class="main-title">🇨🇱 HipoRefi-CL: Motor de Optimización Hipotecaria</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-title">Evaluación Cuantitativa de Refinanciamiento, Costos Normativos (Ley N° 21.236) y Benchmark de Mercado</div>', unsafe_allow_html=True)
+st.html('<div class="main-title">🇨🇱 HipoRefi-CL: Motor de Optimización Hipotecaria</div>')
+st.html('<div class="sub-title">Evaluación Cuantitativa de Refinanciamiento, Costos Normativos (Ley N° 21.236) y Benchmark de Mercado</div>')
 
 uf_current = market_service.get_current_uf()
 overview = market_service.get_market_overview()
@@ -452,20 +457,26 @@ with tab_market:
         is_live_source = "PLAYWRIGHT" in best_quote.get("source", "").upper()
 
         # Tarjeta destacada de la mejor oportunidad
-        st.markdown(f"""
+        live_badge = (
+            '<span style="background-color: #E8F8F5; color: #117A65; padding: 4px 10px; border-radius: 12px; font-weight: bold; margin-right: 8px;">🤖 En Vivo (Playwright)</span>'
+            if is_live_source else ''
+        )
+        badge_class = "badge-recommended" if best_decision["recommendation_flag"] == "RECOMENDADO" else "badge-caution"
+
+        st.html(f"""
         <div class="metric-card">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h3 style="margin: 0; color: #1B4F72;">🥇 Mejor Alternativa: {best_quote['bank_name']}</h3>
-                <div>
-                    {'<span style="background-color: #E8F8F5; color: #117A65; padding: 4px 10px; border-radius: 12px; font-weight: bold; margin-right: 8px;">🤖 En Vivo (Playwright)</span>' if is_live_source else ''}
-                    <span class="{'badge-recommended' if best_decision['recommendation_flag'] == 'RECOMENDADO' else 'badge-caution'}">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;">
+                <h3 style="margin: 0; color: #1B4F72; flex: 1 1 auto; min-width: 250px;">🥇 Mejor Alternativa: {best_quote['bank_name']}</h3>
+                <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                    {live_badge}
+                    <span class="{badge_class}">
                         {best_decision['recommendation_flag']}
                     </span>
                 </div>
             </div>
-            <p style="margin-top: 8px; color: #2C3E50;">{best_decision['rationale']}</p>
+            <p style="margin-top: 10px; margin-bottom: 0; color: #2C3E50; font-size: 1rem;">{best_decision['rationale']}</p>
         </div>
-        """, unsafe_allow_html=True)
+        """)
 
         m1, m2, m3, m4 = st.columns(4)
         m1.metric(
@@ -550,21 +561,21 @@ with tab_market:
     with st.expander("💼 Desglose Normativo de Gastos de Cambio (Ley N° 21.236 & DL 3475)", expanded=False):
         c_col1, c_col2 = st.columns(2)
         with c_col1:
-            st.markdown(f"""
+            st.markdown(textwrap.dedent(f"""
             - **Comisión de Prepago (LGB Art. 100):** {costs.prepayment_penalty_uf:.2f} UF (${costs.prepayment_penalty_uf * uf_current:,.0f} CLP)  
               *(Tope legal máximo de 1.5 meses de intereses devengados)*
             - **Conservador de Bienes Raíces (CBR):** {costs.cbr_uf:.2f} UF (${costs.cbr_uf * uf_current:,.0f} CLP)  
               *(Incluye beneficio legal del 50% de descuento por subrogación)*
             - **Impuesto de Timbres y Estampillas (D.L. 3475):** {costs.stamp_tax_uf:.2f} UF  
               *(100% EXENTO sobre el capital refinanciado)*
-            """)
+            """).strip())
         with c_col2:
-            st.markdown(f"""
+            st.markdown(textwrap.dedent(f"""
             - **Tasación Comercial:** {costs.appraisal_uf:.2f} UF (${costs.appraisal_uf * uf_current:,.0f} CLP)
             - **Estudio de Títulos y Redacción:** {costs.title_deed_uf:.2f} UF (${costs.title_deed_uf * uf_current:,.0f} CLP)
             - **Gastos Notariales Regulados:** {costs.notary_uf:.2f} UF (${costs.notary_uf * uf_current:,.0f} CLP)
             - **COSTO TOTAL OPERACIONAL:** **{costs.total_cost_uf:.2f} UF** (**${costs.total_cost_uf * uf_current:,.0f} CLP**)
-            """)
+            """).strip())
 
     # Gráfico de barras de VPN por entidad
     opps_for_chart = [
@@ -575,7 +586,7 @@ with tab_market:
         }
         for o in opportunities
     ]
-    st.plotly_chart(create_market_npv_chart(opps_for_chart), use_container_width=True)
+    st.plotly_chart(create_market_npv_chart(opps_for_chart))
 
     # Tabla comparativa completa
     st.subheader("Tabla Comparativa de Alternativas")
@@ -598,7 +609,7 @@ with tab_market:
         })
 
     df_table = pd.DataFrame(table_data)
-    st.dataframe(df_table, use_container_width=True, hide_index=True)
+    st.dataframe(df_table, hide_index=True)
 
 
 # ----------------------------------------------------------------------------
@@ -681,24 +692,24 @@ with tab_h2h:
 
     st.write("")
     winner_color = "#2980B9" if h2h_res.winner_bank == bank_a_sel else "#27AE60" if h2h_res.winner_bank == bank_b_sel else "#7F8C8D"
-    st.markdown(f"""
+    st.html(f"""
     <div style="background-color: #F8F9F9; border-radius: 10px; padding: 18px; border-left: 6px solid {winner_color}; margin-bottom: 20px;">
         <h3 style="margin: 0; color: #1B4F72;">{h2h_res.verdict_rationale}</h3>
-        <p style="margin-top: 8px; color: #566573; font-size: 0.95rem;">
+        <p style="margin-top: 8px; margin-bottom: 0; color: #566573; font-size: 0.95rem;">
             Diferencia de VPN: <b>{h2h_res.npv_diff_uf:+.2f} UF</b> (${h2h_res.npv_diff_uf * uf_current:+,.0f} CLP) |
             Diferencia de Dividendo Mensual: <b>{h2h_res.monthly_dividend_diff_uf:+.2f} UF/mes</b> (${h2h_res.monthly_dividend_diff_uf * uf_current:+,.0f} CLP/mes) |
             Diferencia en Costo Total: <b>{h2h_res.total_cost_diff_uf:+.2f} UF</b>
         </p>
     </div>
-    """, unsafe_allow_html=True)
+    """)
 
     col_kpi_a, col_kpi_b = st.columns(2)
     with col_kpi_a:
-        st.markdown(f"""
+        st.html(f"""
         <div style="background-color: #EBF5FB; border-radius: 8px; padding: 12px; border-left: 4px solid #2980B9;">
             <h4 style="margin: 0; color: #1B4F72;">📊 Resultados {bank_a_sel}</h4>
         </div>
-        """, unsafe_allow_html=True)
+        """)
         ma1, ma2, ma3 = st.columns(3)
         ma1.metric("Dividendo Mensual", f"{h2h_res.bank_a.monthly_dividend_uf:.2f} UF", f"${h2h_res.bank_a.monthly_dividend_uf * uf_current:,.0f} CLP")
         ma2.metric("Ahorro Mensual", f"{h2h_res.bank_a.monthly_savings_uf:+.2f} UF", f"${h2h_res.bank_a.monthly_savings_uf * uf_current:+,.0f} CLP")
@@ -709,11 +720,11 @@ with tab_h2h:
         ma6.metric("Dictamen", h2h_res.bank_a.recommendation_flag)
 
     with col_kpi_b:
-        st.markdown(f"""
+        st.html(f"""
         <div style="background-color: #EAFAF1; border-radius: 8px; padding: 12px; border-left: 4px solid #27AE60;">
             <h4 style="margin: 0; color: #196F3D;">📊 Resultados {bank_b_sel}</h4>
         </div>
-        """, unsafe_allow_html=True)
+        """)
         mb1, mb2, mb3 = st.columns(3)
         mb1.metric("Dividendo Mensual", f"{h2h_res.bank_b.monthly_dividend_uf:.2f} UF", f"${h2h_res.bank_b.monthly_dividend_uf * uf_current:,.0f} CLP")
         mb2.metric("Ahorro Mensual", f"{h2h_res.bank_b.monthly_savings_uf:+.2f} UF", f"${h2h_res.bank_b.monthly_savings_uf * uf_current:+,.0f} CLP")
@@ -805,8 +816,7 @@ with tab_breakeven:
                 payback_months=s_eval["payback_months"],
                 annual_discount_rate=discount_rate_dec,
                 institution_name=selected_bank_name,
-            ),
-            use_container_width=True,
+            )
         )
 
         st.plotly_chart(
@@ -815,8 +825,7 @@ with tab_breakeven:
                 new_schedule=sched_new,
                 current_label=f"Crédito Actual ({annual_rate_pct:.2f}%)",
                 new_label=f"{selected_bank_name} ({s_quote['annual_rate_pct']:.2f}%)",
-            ),
-            use_container_width=True,
+            )
         )
 
 
@@ -942,8 +951,7 @@ with tab_sim:
             current_months=months_remaining,
             upfront_costs_uf=costs.total_cost_uf,
             annual_discount_rate=discount_rate_dec,
-        ),
-        use_container_width=True,
+        )
     )
 
 
@@ -952,10 +960,10 @@ with tab_sim:
 # ----------------------------------------------------------------------------
 with tab_fallacy:
     st.subheader("⚠️ La Falacia del Dividendo: Por qué una cuota más baja puede arruinarte")
-    st.markdown("""
+    st.markdown(textwrap.dedent("""
     Un error recurrente en el mercado chileno es refinanciar extendiendo el plazo de la deuda para conseguir un **dividendo mensual más bajo**.
     Aunque el flujo de caja inmediato parece aliviarse, el deudor termina pagando **mucho más dinero al banco** por concepto de intereses adicionales.
-    """)
+    """).strip())
 
     # Modelo de Oferta Trampa: Alargar plazo 10 años con 40 bps menos de tasa
     trap_term_years = min(30, round(months_remaining / 12) + 10)
@@ -1011,8 +1019,7 @@ with tab_fallacy:
             trap_schedule=t_sched,
             current_label=f"Crédito Actual ({months_remaining/12:.0f} años, {annual_rate_pct:.2f}%)",
             trap_label=f"Oferta Trampa ({trap_term_years} años, {trap_rate:.2f}%)",
-        ),
-        use_container_width=True,
+        )
     )
 
 
@@ -1055,7 +1062,7 @@ with tab_schedule:
         "Dividendo Total (UF)", "Saldo Final (UF)"
     ]
 
-    st.dataframe(df_sched, use_container_width=True, height=400)
+    st.dataframe(df_sched, height=400)
 
     # Botón de Descarga CSV
     csv_bytes = df_sched.to_csv(index=False).encode("utf-8")
@@ -1139,12 +1146,12 @@ with tab_advanced:
 
         col_opt_a, col_opt_b = st.columns(2)
         with col_opt_a:
-            st.markdown("""
+            st.html("""
             <div style="background-color: #EBF5FB; border-radius: 8px; padding: 16px; border-left: 5px solid #2980B9;">
                 <h4 style="margin: 0; color: #1B4F72;">Opción A: Reducir Plazo</h4>
-                <p style="color: #566573; font-size: 0.9rem; margin-top: 4px;">Mantiene el dividendo mensual y acorta el vencimiento del crédito.</p>
+                <p style="color: #566573; font-size: 0.9rem; margin-top: 4px; margin-bottom: 0;">Mantiene el dividendo mensual y acorta el vencimiento del crédito.</p>
             </div>
-            """, unsafe_allow_html=True)
+            """)
             m_a1, m_a2 = st.columns(2)
             m_a1.metric("Nuevo Plazo", f"{opt_t.new_months} meses", f"-{opt_t.months_saved} meses ({opt_t.months_saved/12:.1f} años)")
             m_a2.metric("Ahorro Intereses", f"{opt_t.interest_savings_uf:,.1f} UF", f"${opt_t.interest_savings_uf * uf_current:,.0f} CLP")
@@ -1153,12 +1160,12 @@ with tab_advanced:
             m_a4.metric("Ganancia Patrimonial (VPN)", f"{opt_t.npv_uf:+,.1f} UF", f"${opt_t.npv_uf * uf_current:+,.0f} CLP")
 
         with col_opt_b:
-            st.markdown("""
+            st.html("""
             <div style="background-color: #EAFAF1; border-radius: 8px; padding: 16px; border-left: 5px solid #27AE60;">
                 <h4 style="margin: 0; color: #196F3D;">Opción B: Reducir Dividendo</h4>
-                <p style="color: #566573; font-size: 0.9rem; margin-top: 4px;">Mantiene el plazo restante original y reduce la cuota mensual.</p>
+                <p style="color: #566573; font-size: 0.9rem; margin-top: 4px; margin-bottom: 0;">Mantiene el plazo restante original y reduce la cuota mensual.</p>
             </div>
-            """, unsafe_allow_html=True)
+            """)
             m_b1, m_b2 = st.columns(2)
             m_b1.metric("Alivio Mensual", f"-{opt_d.monthly_dividend_saving_uf:.2f} UF/mes", f"-${opt_d.monthly_dividend_saving_uf * uf_current:,.0f} CLP/mes")
             m_b2.metric("Ahorro Intereses", f"{opt_d.interest_savings_uf:,.1f} UF", f"${opt_d.interest_savings_uf * uf_current:,.0f} CLP")
@@ -1470,12 +1477,12 @@ with tab_saved:
             with st.container():
                 col_info, col_actions = st.columns([3, 1])
                 with col_info:
-                    st.markdown(f"""
+                    st.markdown(textwrap.dedent(f"""
                     **{sim_item['title']}** — *{sim_item['client_name']}* (`{sim_item['created_at'][:19]}`)  
                     🏛️ **Actual:** {sim_item['current_bank']} ({sim_item['annual_rate_pct']:.2f}%, {sim_item['balance_uf']:,.1f} UF)  
                     🎯 **Destino:** {sim_item['target_bank']} ({sim_item['target_rate_pct']:.2f}%, {sim_item['target_term_years']} años)  
                     💰 **VPN:** {sim_item['npv_uf']:+,.1f} UF | **Ahorro:** {sim_item['monthly_savings_uf']:+,.2f} UF/mes | **Payback:** {sim_item['payback_months'] or '> Plazo'} meses
-                    """)
+                    """).strip())
                 with col_actions:
                     col_act1, col_act2 = st.columns(2)
                     with col_act1:

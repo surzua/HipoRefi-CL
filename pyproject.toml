@@ -50,6 +50,14 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 python_files = "test_*.py"
 python_functions = "test_*"
+markers = [
+    "slow: marks tests as slow (live network, browser, subprocess; deselect with '-m \"not slow\"')",
+]
+filterwarnings = [
+    "ignore:.*Using .httpx. with .starlette.testclient.*",
+    "ignore:.*StarletteDeprecationWarning.*",
+    "ignore:.*BlockingPortal.*:DeprecationWarning",
+]
 
 [tool.ruff]
 line-length = 120

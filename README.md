@@ -37,9 +37,13 @@ uv pip install -e ".[dev]"
 
 ## 🧪 Pruebas Unitarias
 
-Ejecutar la suite completa de pruebas financieras y de API:
+La suite de pruebas incluye verificaciones matemáticas cuantitativas, endpoints FastAPI y simulación de mercado.
 
 ```bash
+# 1. Ejecución rápida para desarrollo (omite llamadas lentas y scraping en vivo)
+pytest -m "not slow" -v
+
+# 2. Ejecución completa (incluye integración completa de scrapers y simulaciones)
 pytest tests/ -v
 ```
 
